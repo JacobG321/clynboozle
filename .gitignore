@@ -1,3 +1,4 @@
 clynboozle.db
 __pycache__/
 .DS_Store
+clynboozle_env/

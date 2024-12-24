@@ -5,6 +5,12 @@ Welcome to **Clynboozle**, an exciting and competitive game that will test your 
 ## Table of Contents
 - [Introduction](#introduction)
 - [Gameplay](#gameplay)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [How to Play](#how-to-play)
+- [License](#license)
+- [Introduction](#introduction)
+- [Gameplay](#gameplay)
 - [Installation](#installation)
 - [How to Play](#how-to-play)
 - [License](#license)
@@ -17,6 +23,11 @@ Clynboozle is a team-based trivia game where players compete by answering variou
 - **Question Types**: Multiple choice, open-ended, and fill-in-the-blank.
 - **Competition**: Teams take turns answering questions to score points.
 
+## Prerequisites
+Before you begin, ensure you have met the following requirements:
+- You have installed Python 3.x.
+- You have a terminal or command line interface available.
+
 ## Installation
 To install and play Clynboozle, follow these steps:
 
@@ -28,7 +39,19 @@ To install and play Clynboozle, follow these steps:
     ```sh
     cd clynboozle
     ```
-3. Start the game:
+3. Create a virtual environment:
+    ```sh
+    python3 -m venv clynboozle_env
+    ```
+4. Activate the virtual environment:
+    ```sh
+    source clynboozle_env/bin/activate
+    ```
+5. Install the required dependencies:
+    ```sh
+    pip install -r requirements.txt
+    ```
+6. Start the game:
     ```sh
     python3 main.py
     ```
