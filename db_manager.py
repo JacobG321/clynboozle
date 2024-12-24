@@ -1,5 +1,3 @@
-# db_manager.py
-
 import sqlite3
 import datetime
 import random
@@ -27,12 +25,13 @@ class DBManager:
         """
         Creates the necessary tables if they do not exist:
           1. groups (id, group_name)
-          2. questions (id, question, group_id, option1, option2, option3, option4, correct_option, points, category, question_type)
-          3. sessions (id, created_at, is_active, time_per_question, current_turn_team_id, group_id)
-          4. teams (id, session_id, team_name)
-          5. players (id, team_id, player_name)
-          6. session_state (id, session_id, team_id, score)
-          7. session_questions (id, session_id, question_id, was_correct, answered_at)
+          2. questions (id, question, group_id, points, category, question_type, fill_in_blank_text)
+          3. question_options (id, question_id, option_text, is_correct)
+          4. sessions (id, created_at, is_active, time_per_question, current_turn_team_id, group_id)
+          5. teams (id, session_id, team_name)
+          6. players (id, team_id, player_name)
+          7. session_state (id, session_id, team_id, score)
+          8. session_questions (id, session_id, question_id, was_correct, answered_at)
         """
         conn = self.create_connection()
         cursor = conn.cursor()
@@ -46,24 +45,38 @@ class DBManager:
         """)
 
         # 2. questions table
+        #    We'll add fill_in_blank_text as a column.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_id INTEGER NOT NULL,
                 question TEXT NOT NULL,
-                option1 TEXT,
-                option2 TEXT,
-                option3 TEXT,
-                option4 TEXT,
-                correct_option TEXT,
+                fill_in_blank_text TEXT,  -- NEW COLUMN for fill-in blank
                 points INTEGER DEFAULT 10,
                 category TEXT,
-                question_type TEXT,  -- NEW COLUMN
+                question_type TEXT,
                 FOREIGN KEY(group_id) REFERENCES groups(id)
             );
         """)
 
-        # 3. sessions table (now has a group_id column)
+        # If the column didn't exist previously, try an ALTER TABLE just in case:
+        try:
+            cursor.execute("ALTER TABLE questions ADD COLUMN fill_in_blank_text TEXT;")
+        except:
+            pass  # If it already exists, we'll ignore the error
+
+        # 3. question_options table (NEW)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS question_options (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question_id INTEGER NOT NULL,
+                option_text TEXT NOT NULL,
+                is_correct INTEGER DEFAULT 0,
+                FOREIGN KEY(question_id) REFERENCES questions(id)
+            );
+        """)
+
+        # 4. sessions table (has group_id column)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +90,7 @@ class DBManager:
             );
         """)
 
-        # 4. teams table
+        # 5. teams table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS teams (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +100,7 @@ class DBManager:
             );
         """)
 
-        # 5. players table (optional)
+        # 6. players table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS players (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,7 +110,7 @@ class DBManager:
             );
         """)
 
-        # 6. session_state table (tracks scores per team)
+        # 7. session_state table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_state (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,7 +122,7 @@ class DBManager:
             );
         """)
 
-        # 7. session_questions table (tracks which questions were answered, correctness)
+        # 8. session_questions table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,47 +155,224 @@ class DBManager:
 
     def insert_question(self, question_data):
         """
-        Inserts a question record (multiple-choice or otherwise).
-        question_data keys: group_id, question, option1..4, correct_option, points, category, question_type
+        Inserts a question record and any associated options.
+        
+        question_data might look like:
+        {
+            "group_id": 1,
+            "question": "Sample multiple-choice question",
+            "points": 10,
+            "category": "History",
+            "question_type": "multiple_choice",
+            "blank_text": "206" (for fill_in_blank questions),
+            "options": [
+                {"text": "Option A", "is_correct": False},
+                {"text": "Option B", "is_correct": True},
+                ...
+            ]
+        }
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+
+        # If question_type == "fill_in_blank", store the text in fill_in_blank_text
+        # Otherwise keep it None.
+        fill_text = None
+        if question_data.get('question_type') == 'fill_in_blank':
+            fill_text = question_data.get('blank_text', '')
+
+        # Insert the question record
+        cursor.execute("""
+            INSERT INTO questions (
+                group_id,
+                question,
+                fill_in_blank_text,
+                points,
+                category,
+                question_type
+            ) VALUES (?, ?, ?, ?, ?, ?);
+        """, (
+            question_data.get('group_id'),
+            question_data.get('question'),
+            fill_text,
+            question_data.get('points', 10),
+            question_data.get('category', ''),
+            question_data.get('question_type', 'multiple_choice')
+        ))
+
+        question_id = cursor.lastrowid
+
+        # If it's multiple-choice, we insert the options
+        if question_data.get('question_type') == 'multiple_choice':
+            for opt in question_data.get('options', []):
+                cursor.execute("""
+                    INSERT INTO question_options (question_id, option_text, is_correct)
+                    VALUES (?, ?, ?);
+                """, (question_id, opt["text"], 1 if opt["is_correct"] else 0))
+
+        conn.commit()
+        conn.close()
+        return question_id
+
+    def update_question(self, question_data):
+        """
+        Updates an existing question in the database and handles
+        options if it's multiple choice.
+
+        question_data might look like:
+        {
+            "question_id": 12,
+            "group_id": 1,
+            "question": "Updated question text",
+            "points": 5,
+            "category": "Science",
+            "question_type": "fill_in_blank",
+            "blank_text": "206",
+            "options": [ ... ]  # only relevant for multiple_choice
+        }
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+
+        fill_text = None
+        if question_data.get('question_type') == 'fill_in_blank':
+            fill_text = question_data.get('blank_text', '')
+
+        # Update the main question record
+        cursor.execute("""
+            UPDATE questions
+            SET 
+                question = ?,
+                fill_in_blank_text = ?,
+                points = ?,
+                category = ?,
+                question_type = ?
+            WHERE id = ?;
+        """, (
+            question_data.get('question'),
+            fill_text,
+            question_data.get('points'),
+            question_data.get('category'),
+            question_data.get('question_type'),
+            question_data.get('question_id')
+        ))
+
+        # If multiple-choice, update the options
+        if question_data.get('question_type') == 'multiple_choice':
+            # Delete old options
+            cursor.execute("""
+                DELETE FROM question_options
+                WHERE question_id = ?;
+            """, (question_data["question_id"],))
+
+            # Insert new ones
+            for opt in question_data.get('options', []):
+                cursor.execute("""
+                    INSERT INTO question_options (question_id, option_text, is_correct)
+                    VALUES (?, ?, ?);
+                """, (question_data["question_id"], opt["text"], 1 if opt["is_correct"] else 0))
+        else:
+            # If it's not multiple_choice, remove existing options if any
+            cursor.execute("""
+                DELETE FROM question_options
+                WHERE question_id = ?;
+            """, (question_data["question_id"],))
+
+        conn.commit()
+        conn.close()
+
+    def get_question(self, question_id):
+        """
+        Retrieves a single question by ID and its options (if multiple_choice),
+        and fill_in_blank_text if fill_in_blank.
+        Returns a dict or None if not found.
         """
         conn = self.create_connection()
         cursor = conn.cursor()
 
         cursor.execute("""
-            INSERT INTO questions (
-                group_id,
-                question,
-                option1,
-                option2,
-                option3,
-                option4,
-                correct_option,
-                points,
-                category,
-                question_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """, (
-            question_data.get('group_id'),
-            question_data.get('question'),
-            question_data.get('option1'),
-            question_data.get('option2'),
-            question_data.get('option3'),
-            question_data.get('option4'),
-            question_data.get('correct_option'),
-            question_data.get('points', 10),
-            question_data.get('category'),
-            question_data.get('question_type')
-        ))
+            SELECT id, group_id, question, fill_in_blank_text, points, category, question_type
+            FROM questions
+            WHERE id = ?;
+        """, (question_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return None
+
+        question_dict = {
+            'id': row[0],
+            'group_id': row[1],
+            'question': row[2],
+            'fill_in_blank_text': row[3],  # new
+            'points': row[4],
+            'category': row[5],
+            'question_type': row[6],
+            'options': []
+        }
+
+        # If multiple choice, fetch the options from question_options
+        if question_dict['question_type'] == 'multiple_choice':
+            cursor.execute("""
+                SELECT id, option_text, is_correct
+                FROM question_options
+                WHERE question_id = ?
+            """, (question_id,))
+            option_rows = cursor.fetchall()
+            for opt_row in option_rows:
+                question_dict['options'].append({
+                    'id': opt_row[0],
+                    'text': opt_row[1],
+                    'is_correct': bool(opt_row[2])
+                })
+
+        conn.close()
+        return question_dict
+
+    def get_questions_for_group(self, group_id):
+        """
+        Fetches all questions for a particular group (only basic question info).
+        Use get_question(question_id) to get the detailed options if needed.
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, question 
+            FROM questions
+            WHERE group_id = ?;
+        """, (group_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        # Return a list of dicts
+        return [{'id': r[0], 'question': r[1]} for r in rows]
+
+    def delete_question(self, question_id):
+        """
+        Deletes a question and all its options.
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        
+        # First, delete options associated with the question
+        cursor.execute("""
+            DELETE FROM question_options
+            WHERE question_id = ?;
+        """, (question_id,))
+
+        # Then delete the question itself
+        cursor.execute("""
+            DELETE FROM questions
+            WHERE id = ?;
+        """, (question_id,))
 
         conn.commit()
-        question_id = cursor.lastrowid
         conn.close()
-        return question_id
-
 
     def get_random_question(self, group_id=None):
         """
         Retrieves a random question from the specified group (if given).
+        Includes fill_in_blank_text if it's a fill_in_blank question,
+        and fetches options if it's multiple_choice.
         Returns a dict or None if no questions are found.
         """
         conn = self.create_connection()
@@ -191,8 +381,7 @@ class DBManager:
         if group_id:
             cursor.execute("""
                 SELECT 
-                    id, group_id, question, option1, option2, option3, option4,
-                    correct_option, points, category, question_type
+                    id, group_id, question, fill_in_blank_text, points, category, question_type
                 FROM questions
                 WHERE group_id = ?
                 ORDER BY RANDOM() 
@@ -201,32 +390,79 @@ class DBManager:
         else:
             cursor.execute("""
                 SELECT 
-                    id, group_id, question, option1, option2, option3, option4,
-                    correct_option, points, category, question_type
+                    id, group_id, question, fill_in_blank_text, points, category, question_type
                 FROM questions
                 ORDER BY RANDOM()
                 LIMIT 1;
             """)
 
         row = cursor.fetchone()
-        conn.close()
-
-        if row is None:
+        if not row:
+            conn.close()
             return None
 
-        return {
+        # Build the basic question dict
+        question_dict = {
             'id': row[0],
             'group_id': row[1],
             'question': row[2],
-            'option1': row[3],
-            'option2': row[4],
-            'option3': row[5],
-            'option4': row[6],
-            'correct_option': row[7],
-            'points': row[8],
-            'category': row[9],
-            'question_type': row[10]
+            'fill_in_blank_text': row[3],   # only relevant if question_type == 'fill_in_blank'
+            'points': row[4],
+            'category': row[5],
+            'question_type': row[6],
+            'options': []                   # for multiple_choice
         }
+
+        # If multiple_choice, fetch all options from question_options
+        if question_dict['question_type'] == 'multiple_choice':
+            cursor.execute("""
+                SELECT id, option_text, is_correct
+                FROM question_options
+                WHERE question_id = ?;
+            """, (question_dict['id'],))
+            option_rows = cursor.fetchall()
+            for opt_row in option_rows:
+                question_dict['options'].append({
+                    'id': opt_row[0],
+                    'text': opt_row[1],
+                    'is_correct': bool(opt_row[2])
+                })
+
+        conn.close()
+        return question_dict
+
+
+    def delete_group(self, group_id):
+        """
+        Deletes a group and all associated questions and options.
+        """
+        # 1. Find all questions for this group
+        questions = self.get_questions_for_group(group_id)
+
+        conn = self.create_connection()
+        cursor = conn.cursor()
+
+        # 2. Delete options for each question
+        for q in questions:
+            cursor.execute("""
+                DELETE FROM question_options
+                WHERE question_id = ?;
+            """, (q["id"],))
+
+        # 3. Delete questions
+        cursor.execute("""
+            DELETE FROM questions
+            WHERE group_id = ?;
+        """, (group_id,))
+
+        # 4. Finally, delete the group itself
+        cursor.execute("""
+            DELETE FROM groups
+            WHERE id = ?;
+        """, (group_id,))
+
+        conn.commit()
+        conn.close()
 
     # ----------------------
     # SESSIONS
@@ -251,8 +487,6 @@ class DBManager:
     def get_session(self, session_id):
         """
         Retrieves session info by session_id, including group_id.
-        Returns a dict with { 'id', 'created_at', 'is_active', 'time_per_question', 'current_turn_team_id', 'group_id' }
-        or None if not found.
         """
         conn = self.create_connection()
         cursor = conn.cursor()
