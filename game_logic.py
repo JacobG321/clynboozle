@@ -25,13 +25,24 @@ class GameLogic:
         self.teams = []
         self.scores = {}
 
-    def create_new_session(self, group_id, time_per_question):
+    def create_new_session(self, question_group_id, time_per_question):
         """
-        Creates a new session in the DB, storing group_id and time_per_question.
+        Creates a brand-new session in the DB, storing question_group_id and time_per_question,
+        ensuring we do not accidentally reuse or conflict with an old session.
         """
-        self.current_session_id = self.db.create_session(time_per_question, group_id)
+        # If there was an old session still active, end it
+        if self.current_session_id is not None:
+            self.end_session()  # or self.db.update_session_status(self.current_session_id, False)
+
+        self.current_session_id = self.db.create_session(time_per_question, question_group_id)
         self.current_session_info = self.db.get_session(self.current_session_id)
+
+        # Also clear local team references, etc. so this is truly new
+        self.teams = []
+        self.scores = {}
+
         return self.current_session_id
+
 
     def load_session(self, session_id):
         """
@@ -81,15 +92,17 @@ class GameLogic:
         if not s_data or not s_data["is_active"]:
             return None
 
-        group_id = s_data["group_id"]
-        if not group_id:
+        question_group_id = s_data["question_group_id"]
+        if not question_group_id:
             return None
 
-        if not self.db.any_questions_left_for_session(self.current_session_id, group_id):
+        # Check if any questions remain
+        if not self.db.any_questions_left_for_session(self.current_session_id, question_group_id):
             return None
 
-        # Fetch a random question
-        return self.db.get_random_question(group_id)
+        # Fetch a random question that hasn't been answered in this session
+        return self.db.get_random_question(question_group_id, self.current_session_id)
+
 
     def mark_answer(self, question_id, was_correct, points=0):
         """

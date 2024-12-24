@@ -40,6 +40,8 @@ ADD_QUESTIONS = "ADD_QUESTIONS"
 SESSION_SETUP = "SESSION_SETUP"
 TEAM_SETUP = "TEAM_SETUP"
 GAMEPLAY = "GAMEPLAY"
+FEEDBACK = "FEEDBACK"
+
 
 current_state = MAIN_MENU
 
@@ -53,14 +55,14 @@ game_logic = GameLogic(db)
 # Shared Variables
 # ---------------------------
 focused_field = None
-selected_group_id = None
+selected_question_group_id = None
 selected_question_type = None
 question_data = {}   # Holds question info (including editing vs. new)
 input_text = ""      # Temporary input text for add_group screen
 
 # For the game flow
 session_setup_data = {
-    "group_id": None,
+    "question_group_id": None,
     "time_per_question": "30",
 }
 team_list = []       # list of team names user adds
@@ -148,9 +150,9 @@ def draw_select_group():
 
     return back_btn, group_buttons
 
-def draw_view_group(group_id):
+def draw_view_group(question_group_id):
     screen.fill(WHITE)
-    title = font.render(f"Group {group_id} Questions", True, BLACK)
+    title = font.render(f"Group {question_group_id} Questions", True, BLACK)
     screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
 
     back_btn = draw_back_button()
@@ -160,7 +162,7 @@ def draw_view_group(group_id):
     question_buttons = []
     y_offset = 150
 
-    questions = db.get_questions_for_group(group_id)
+    questions = db.get_questions_for_group(question_group_id)
     for q in questions:
         q_btn = create_button(50, y_offset, 600, 50, GRAY, f"{q['question']}")
         del_btn = create_button(675, y_offset, 100, 50, RED, "Delete")
@@ -360,21 +362,77 @@ def draw_gameplay():
         return end_btn, None, None, None
 
     # Make sure we have a question
-    if "active_question" not in question_data:
-        q = game_logic.begin_game_loop()  # get next random
+    if "active_question" not in question_data or question_data["active_question"] is None:
+        q = game_logic.begin_game_loop()  # Attempt to fetch a new question
         if q is None:
             question_data["active_question"] = None
         else:
             question_data["active_question"] = q
-            question_data["user_answer"] = ""  # For fill_in_blank only
+            question_data["user_answer"] = ""
 
+    # If STILL None, we show "No more questions."
     aq = question_data["active_question"]
     y_offset = 50
     if aq is None:
-        msg = font.render("No more questions or session done!", True, RED)
-        screen.blit(msg, (50, y_offset))
+        screen.fill(WHITE)
+        msg = font.render("No more questions left!", True, RED)
+        screen.blit(msg, (50, 50))
+
+        # Grab final scores
+        final_scores = game_logic.get_scores()  # dict of {team_id: score}
+
+        # We also want the team names from game_logic.teams
+        # e.g. game_logic.teams is [ { "team_id": 1, "team_name": "Alpha", ...}, ... ]
+        team_list = game_logic.teams
+
+        # Determine the highest score
+        max_score = max(final_scores.values()) if final_scores else 0
+        # Find all teams that have this highest score (in case of a tie)
+        winner_ids = [tid for tid, sc in final_scores.items() if sc == max_score]
+
+        y_offset = 120
+        # Show final scoreboard
+        scores_label = font.render("Final Scores:", True, BLACK)
+        screen.blit(scores_label, (50, y_offset))
+        y_offset += 50
+
+        for tid, sc in final_scores.items():
+            # find name
+            name_str = f"Team {tid}"
+            for t in team_list:
+                if t["team_id"] == tid:
+                    name_str = t["team_name"]
+                    break
+            line_surf = small_font.render(f"{name_str}: {sc}", True, BLACK)
+            screen.blit(line_surf, (70, y_offset))
+            y_offset += 30
+
+        y_offset += 30
+
+        # Now display the winner(s)
+        winner_names = []
+        for w_id in winner_ids:
+            # find the name
+            w_name = f"Team {w_id}"
+            for t in team_list:
+                if t["team_id"] == w_id:
+                    w_name = t["team_name"]
+                    break
+            winner_names.append(w_name)
+
+        if len(winner_names) == 1:
+            winner_msg = f"{winner_names[0]} is the WINNER!"
+        else:
+            # tie
+            winner_msg = f"{', '.join(winner_names)} are the WINNERS!"
+
+        winner_surf = font.render(winner_msg, True, GREEN)
+        screen.blit(winner_surf, (50, y_offset))
         y_offset += 60
+
+        # Optionally a "Back to Menu" or "End Session" button
         end_btn = create_button(300, 500, 200, 50, RED, "End Session")
+        # We can return it if needed by your code
         return end_btn, None, None, None
 
     qtype = aq["question_type"]
@@ -434,13 +492,49 @@ def draw_gameplay():
     screen.blit(scores_label, (50, y_offset))
     y_offset += 30
     st = game_logic.get_scores()
+    team_list = game_logic.teams
     for tid, sc in st.items():
-        t_surf = small_font.render(f"Team {tid}: {sc}", True, BLACK)
+        # Find the matching team name
+        team_name = f"Team {tid}"  # fallback if not found
+        for t in team_list:
+            if t["team_id"] == tid:
+                team_name = t["team_name"]
+                break
+        
+        text_str = f"{team_name}: {sc}"
+        t_surf = small_font.render(text_str, True, BLACK)
         screen.blit(t_surf, (70, y_offset))
         y_offset += 30
 
     # Return everything we need
     return end_btn, None, clickable_buttons, None
+
+def draw_feedback():
+    """
+    Display "Correct!" or "Incorrect!" based on question_data["last_was_correct"].
+    Provide a button "Next Question" to proceed, or "End Session" if user wants.
+    """
+    screen.fill(WHITE)
+    title = font.render("Result", True, BLACK)
+    screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 50))
+
+    was_correct = question_data.get("last_was_correct", False)
+    msg_text = "Incorrect!"
+    msg_color = RED
+
+    if was_correct:
+        awarded = question_data.get("last_points", 0)
+        msg_text = f"Correct! +{awarded} points!"
+        msg_color = GREEN
+
+    msg_surf = font.render(msg_text, True, msg_color)
+    screen.blit(msg_surf, (SCREEN_WIDTH//2 - msg_surf.get_width()//2, 150))
+
+    next_btn = create_button(300, 300, 200, 50, BLUE, "Next Question")
+    end_btn = create_button(300, 400, 200, 50, RED, "End Session")
+
+    return next_btn, end_btn
+
 
 
 # ---------------------------
@@ -479,14 +573,14 @@ def handle_add_group(event, buttons):
         current_state = MANAGE_GROUPS
 
 def handle_select_group(event, buttons):
-    global current_state, selected_group_id
+    global current_state, selected_question_group_id
     back_btn, group_buttons = buttons
     if back_btn.collidepoint(event.pos):
         current_state = MANAGE_GROUPS
     else:
         for group_btn, g_id in group_buttons:
             if group_btn.collidepoint(event.pos):
-                selected_group_id = g_id
+                selected_question_group_id = g_id
                 current_state = VIEW_GROUP
 
 def handle_view_group(event, buttons):
@@ -497,7 +591,7 @@ def handle_view_group(event, buttons):
     elif add_question_btn.collidepoint(event.pos):
         current_state = SELECT_QUESTION_TYPE
     elif delete_group_btn.collidepoint(event.pos):
-        db.delete_group(selected_group_id)
+        db.delete_group(selected_question_group_id)
         current_state = SELECT_GROUP
     else:
         for q_btn, del_btn, q_id in question_buttons:
@@ -597,7 +691,7 @@ def handle_add_questions_click(event, buttons):
             qid = question_data["question_id"]
             db.update_question({
                 "question_id": qid,
-                "group_id": selected_group_id,
+                "question_group_id": selected_question_group_id,
                 "question": question_data["question"],
                 "points": question_data["points"],
                 "category": question_data["category"],
@@ -607,7 +701,7 @@ def handle_add_questions_click(event, buttons):
             })
         else:
             db.insert_question({
-                "group_id": selected_group_id,
+                "question_group_id": selected_question_group_id,
                 "question": question_data.get("question", ""),
                 "points": question_data.get("points", 10),
                 "category": question_data.get("category", ""),
@@ -691,7 +785,7 @@ def handle_session_setup(event, buttons):
 
     for (btn, gid) in group_buttons:
         if btn.collidepoint(event.pos):
-            session_setup_data["group_id"] = gid
+            session_setup_data["question_group_id"] = gid
             print(f"[UI] Chose group {gid}")
 
     if time_box.collidepoint(event.pos):
@@ -699,7 +793,7 @@ def handle_session_setup(event, buttons):
         return
 
     if create_session_btn.collidepoint(event.pos):
-        if not session_setup_data["group_id"]:
+        if not session_setup_data["question_group_id"]:
             print("[UI] No group selected!")
             return
         try:
@@ -707,7 +801,7 @@ def handle_session_setup(event, buttons):
         except ValueError:
             print("[UI] Invalid time-per-question input.")
             return
-        sid = game_logic.create_new_session(session_setup_data["group_id"], tpq)
+        sid = game_logic.create_new_session(session_setup_data["question_group_id"], tpq)
         print(f"[UI] Created session {sid}")
         # Clear team list
         global team_list
@@ -808,22 +902,30 @@ def handle_gameplay_keydown(event):
 
 def handle_multiple_choice_click(option_index):
     aq = question_data.get("active_question", None)
-    if not aq: 
+    if not aq:
         return
+
     options = aq.get("options", [])
     if option_index < 0 or option_index >= len(options):
         return
 
     chosen = options[option_index]
-    # Determine correctness
     was_correct = chosen["is_correct"]
     pts = aq.get("points", 0)
     print(f"[UI] User clicked option '{chosen['text']}', was_correct={was_correct}")
 
     game_logic.mark_answer(aq["id"], was_correct, pts)
-    # Force next question
+
+    question_data["last_was_correct"] = was_correct
+    # Store the points for later display in Feedback
+    if was_correct:
+        question_data["last_points"] = pts
+    else:
+        question_data["last_points"] = 0
+
     question_data["active_question"] = None
-    question_data["user_answer"] = ""
+    global current_state
+    current_state = FEEDBACK
 
 
 def handle_fill_in_blank_submit():
@@ -837,19 +939,50 @@ def handle_fill_in_blank_submit():
     print(f"[UI] Fill in blank submitted='{typed_ans}', correct='{correct}', was_correct={was_correct}")
 
     game_logic.mark_answer(aq["id"], was_correct, pts)
+
     question_data["active_question"] = None
     question_data["user_answer"] = ""
+    question_data["last_was_correct"] = was_correct
+    question_data["last_points"] = pts if was_correct else 0
+    global current_state
+    current_state = FEEDBACK
+
 
 def handle_open_ended_correct(is_correct):
     aq = question_data.get("active_question", None)
     if not aq:
         return
     pts = aq.get("points", 0)
-    was_correct = True if is_correct else False
+    was_correct = bool(is_correct)
     print(f"[UI] Open ended judged correct={was_correct}")
+
     game_logic.mark_answer(aq["id"], was_correct, pts)
     question_data["active_question"] = None
     question_data["user_answer"] = ""
+    question_data["last_was_correct"] = was_correct
+    question_data["last_points"] = pts if was_correct else 0
+    global current_state
+    current_state = FEEDBACK
+
+def handle_feedback(event, buttons):
+    global current_state, question_data
+    next_btn, end_btn = buttons
+
+    if next_btn.collidepoint(event.pos):
+        # Clear out the old question so the gameplay screen is forced to fetch a new one
+        question_data["active_question"] = None
+        # Also clear "last_was_correct" if you like
+        question_data.pop("last_was_correct", None)
+
+        current_state = GAMEPLAY
+        return
+
+    if end_btn.collidepoint(event.pos):
+        game_logic.end_session()
+        question_data.clear()
+        current_state = MAIN_MENU
+        return
+
 
 
 
@@ -873,7 +1006,7 @@ def main():
         elif current_state == SELECT_GROUP:
             buttons = draw_select_group()
         elif current_state == VIEW_GROUP:
-            buttons = draw_view_group(selected_group_id)
+            buttons = draw_view_group(selected_question_group_id)
         elif current_state == SELECT_QUESTION_TYPE:
             buttons = draw_select_question_type()
         elif current_state == ADD_QUESTIONS:
@@ -886,6 +1019,8 @@ def main():
             buttons = draw_team_setup()
         elif current_state == GAMEPLAY:
             buttons = draw_gameplay()
+        elif current_state == FEEDBACK:
+            buttons = draw_feedback()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -919,6 +1054,8 @@ def main():
                     handle_team_setup(event, buttons)
                 elif current_state == GAMEPLAY:
                     handle_gameplay(event, buttons)
+                elif current_state == FEEDBACK:
+                    handle_feedback(event, buttons)
 
             if event.type == pygame.KEYDOWN:
                 if current_state == ADD_GROUP:

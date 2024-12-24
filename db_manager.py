@@ -25,9 +25,9 @@ class DBManager:
         """
         Creates the necessary tables if they do not exist:
           1. groups (id, group_name)
-          2. questions (id, question, group_id, points, category, question_type, fill_in_blank_text)
+          2. questions (id, question, question_group_id, points, category, question_type, fill_in_blank_text)
           3. question_options (id, question_id, option_text, is_correct)
-          4. sessions (id, created_at, is_active, time_per_question, current_turn_team_id, group_id)
+          4. sessions (id, created_at, is_active, time_per_question, current_turn_team_id, question_group_id)
           5. teams (id, session_id, team_name)
           6. players (id, team_id, player_name)
           7. session_state (id, session_id, team_id, score)
@@ -49,13 +49,13 @@ class DBManager:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id INTEGER NOT NULL,
+                question_group_id INTEGER NOT NULL,
                 question TEXT NOT NULL,
                 fill_in_blank_text TEXT,  -- NEW COLUMN for fill-in blank
                 points INTEGER DEFAULT 10,
                 category TEXT,
                 question_type TEXT,
-                FOREIGN KEY(group_id) REFERENCES groups(id)
+                FOREIGN KEY(question_group_id) REFERENCES groups(id)
             );
         """)
 
@@ -76,7 +76,7 @@ class DBManager:
             );
         """)
 
-        # 4. sessions table (has group_id column)
+        # 4. sessions table (has question_group_id column)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,9 +84,9 @@ class DBManager:
                 is_active INTEGER DEFAULT 1,
                 time_per_question INTEGER DEFAULT 30,
                 current_turn_team_id INTEGER,
-                group_id INTEGER,
+                question_group_id INTEGER,
                 FOREIGN KEY(current_turn_team_id) REFERENCES teams(id),
-                FOREIGN KEY(group_id) REFERENCES groups(id)
+                FOREIGN KEY(question_group_id) REFERENCES groups(id)
             );
         """)
 
@@ -149,9 +149,9 @@ class DBManager:
             VALUES (?);
         """, (group_name,))
         conn.commit()
-        group_id = cursor.lastrowid
+        question_group_id = cursor.lastrowid
         conn.close()
-        return group_id
+        return question_group_id
 
     def insert_question(self, question_data):
         """
@@ -159,7 +159,7 @@ class DBManager:
         
         question_data might look like:
         {
-            "group_id": 1,
+            "question_group_id": 1,
             "question": "Sample multiple-choice question",
             "points": 10,
             "category": "History",
@@ -184,7 +184,7 @@ class DBManager:
         # Insert the question record
         cursor.execute("""
             INSERT INTO questions (
-                group_id,
+                question_group_id,
                 question,
                 fill_in_blank_text,
                 points,
@@ -192,7 +192,7 @@ class DBManager:
                 question_type
             ) VALUES (?, ?, ?, ?, ?, ?);
         """, (
-            question_data.get('group_id'),
+            question_data.get('question_group_id'),
             question_data.get('question'),
             fill_text,
             question_data.get('points', 10),
@@ -222,7 +222,7 @@ class DBManager:
         question_data might look like:
         {
             "question_id": 12,
-            "group_id": 1,
+            "question_group_id": 1,
             "question": "Updated question text",
             "points": 5,
             "category": "Science",
@@ -291,7 +291,7 @@ class DBManager:
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, group_id, question, fill_in_blank_text, points, category, question_type
+            SELECT id, question_group_id, question, fill_in_blank_text, points, category, question_type
             FROM questions
             WHERE id = ?;
         """, (question_id,))
@@ -302,7 +302,7 @@ class DBManager:
 
         question_dict = {
             'id': row[0],
-            'group_id': row[1],
+            'question_group_id': row[1],
             'question': row[2],
             'fill_in_blank_text': row[3],  # new
             'points': row[4],
@@ -329,7 +329,7 @@ class DBManager:
         conn.close()
         return question_dict
 
-    def get_questions_for_group(self, group_id):
+    def get_questions_for_group(self, question_group_id):
         """
         Fetches all questions for a particular group (only basic question info).
         Use get_question(question_id) to get the detailed options if needed.
@@ -339,8 +339,8 @@ class DBManager:
         cursor.execute("""
             SELECT id, question 
             FROM questions
-            WHERE group_id = ?;
-        """, (group_id,))
+            WHERE question_group_id = ?;
+        """, (question_group_id,))
         rows = cursor.fetchall()
         conn.close()
         # Return a list of dicts
@@ -368,52 +368,67 @@ class DBManager:
         conn.commit()
         conn.close()
 
-    def get_random_question(self, group_id=None):
+    def get_random_question(self, question_group_id=None, session_id=None):
         """
-        Retrieves a random question from the specified group (if given).
-        Includes fill_in_blank_text if it's a fill_in_blank question,
-        and fetches options if it's multiple_choice.
+        Retrieves a random question from the specified group that has NOT
+        been answered in 'session_questions' for the given session_id.
+        If session_id is None, we just pick randomly from the group with no filter.
         Returns a dict or None if no questions are found.
         """
+
         conn = self.create_connection()
         cursor = conn.cursor()
 
-        if group_id:
-            cursor.execute("""
-                SELECT 
-                    id, group_id, question, fill_in_blank_text, points, category, question_type
-                FROM questions
-                WHERE group_id = ?
-                ORDER BY RANDOM() 
-                LIMIT 1;
-            """, (group_id,))
-        else:
-            cursor.execute("""
-                SELECT 
-                    id, group_id, question, fill_in_blank_text, points, category, question_type
-                FROM questions
-                ORDER BY RANDOM()
-                LIMIT 1;
-            """)
+        # We'll build a base query
+        base_query = """
+            SELECT 
+                q.id, 
+                q.question_group_id, 
+                q.question, 
+                q.fill_in_blank_text, 
+                q.points, 
+                q.category, 
+                q.question_type
+            FROM questions q
+        """
+        where_clauses = []
+        params = []
 
+        # If question_group_id is specified
+        if question_group_id is not None:
+            where_clauses.append("q.question_group_id = ?")
+            params.append(question_group_id)
+
+        # If session_id is provided, exclude questions already answered
+        if session_id is not None:
+            where_clauses.append("q.id NOT IN (SELECT question_id FROM session_questions WHERE session_id = ?) ")
+            params.append(session_id)
+
+        if where_clauses:
+            base_query += " WHERE " + " AND ".join(where_clauses)
+
+        # Finally order by random and limit 1
+        base_query += " ORDER BY RANDOM() LIMIT 1;"
+
+        cursor.execute(base_query, tuple(params))
         row = cursor.fetchone()
+
         if not row:
             conn.close()
             return None
 
-        # Build the basic question dict
         question_dict = {
             'id': row[0],
-            'group_id': row[1],
+            'question_group_id': row[1],
             'question': row[2],
-            'fill_in_blank_text': row[3],   # only relevant if question_type == 'fill_in_blank'
+            'fill_in_blank_text': row[3],
             'points': row[4],
             'category': row[5],
             'question_type': row[6],
-            'options': []                   # for multiple_choice
+            'options': []
         }
 
-        # If multiple_choice, fetch all options from question_options
+        # If multiple_choice, fetch the options
         if question_dict['question_type'] == 'multiple_choice':
             cursor.execute("""
                 SELECT id, option_text, is_correct
@@ -432,12 +447,13 @@ class DBManager:
         return question_dict
 
 
-    def delete_group(self, group_id):
+
+    def delete_group(self, question_group_id):
         """
         Deletes a group and all associated questions and options.
         """
         # 1. Find all questions for this group
-        questions = self.get_questions_for_group(group_id)
+        questions = self.get_questions_for_group(question_group_id)
 
         conn = self.create_connection()
         cursor = conn.cursor()
@@ -452,14 +468,14 @@ class DBManager:
         # 3. Delete questions
         cursor.execute("""
             DELETE FROM questions
-            WHERE group_id = ?;
-        """, (group_id,))
+            WHERE question_group_id = ?;
+        """, (question_group_id,))
 
         # 4. Finally, delete the group itself
         cursor.execute("""
             DELETE FROM groups
             WHERE id = ?;
-        """, (group_id,))
+        """, (question_group_id,))
 
         conn.commit()
         conn.close()
@@ -467,18 +483,18 @@ class DBManager:
     # ----------------------
     # SESSIONS
     # ----------------------
-    def create_session(self, time_per_question, group_id):
+    def create_session(self, time_per_question, question_group_id):
         """
         Inserts a new session record into the sessions table,
-        storing time_per_question and the chosen group_id.
+        storing time_per_question and the chosen question_group_id.
         Returns the new session_id.
         """
         conn = self.create_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO sessions (time_per_question, is_active, group_id)
+            INSERT INTO sessions (time_per_question, is_active, question_group_id)
             VALUES (?, 1, ?);
-        """, (time_per_question, group_id))
+        """, (time_per_question, question_group_id))
         conn.commit()
         session_id = cursor.lastrowid
         conn.close()
@@ -486,12 +502,12 @@ class DBManager:
 
     def get_session(self, session_id):
         """
-        Retrieves session info by session_id, including group_id.
+        Retrieves session info by session_id, including question_group_id.
         """
         conn = self.create_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, created_at, is_active, time_per_question, current_turn_team_id, group_id
+            SELECT id, created_at, is_active, time_per_question, current_turn_team_id, question_group_id
             FROM sessions
             WHERE id = ?;
         """, (session_id,))
@@ -507,7 +523,7 @@ class DBManager:
             'is_active': bool(row[2]),
             'time_per_question': row[3],
             'current_turn_team_id': row[4],
-            'group_id': row[5]
+            'question_group_id': row[5]
         }
 
     def update_session_status(self, session_id, is_active):
@@ -668,10 +684,10 @@ class DBManager:
         conn.commit()
         conn.close()
 
-    def any_questions_left_for_session(self, session_id, group_id):
+    def any_questions_left_for_session(self, session_id, question_group_id):
         """
         Returns True if there's at least one question in 'questions'
-        for the given group_id that hasn't been answered in 'session_questions'.
+        for the given question_group_id that hasn't been answered in 'session_questions'.
         Otherwise returns False.
         """
         conn = self.create_connection()
@@ -679,14 +695,14 @@ class DBManager:
         cursor.execute("""
             SELECT q.id
             FROM questions q
-            WHERE q.group_id = ?
+            WHERE q.question_group_id = ?
               AND q.id NOT IN (
                   SELECT question_id 
                   FROM session_questions
                   WHERE session_id = ?
               )
             LIMIT 1;
-        """, (group_id, session_id))
+        """, (question_group_id, session_id))
         row = cursor.fetchone()
         conn.close()
         return (row is not None)
