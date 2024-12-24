@@ -50,11 +50,10 @@ class GameLogic:
         return True
 
     def setup_teams(self, team_names):
-        """
-        Given a list of team names, create them in the DB and set initial scores to 0.
-        """
         if not self.current_session_id:
             return
+
+        # Insert teams
         for name in team_names:
             self.db.add_team(self.current_session_id, name)
 
@@ -62,6 +61,15 @@ class GameLogic:
         self.teams = self.db.get_teams_for_session(self.current_session_id)
         team_ids = [t["team_id"] for t in self.teams]
         self.db.init_session_state(self.current_session_id, team_ids)
+
+        # Now check if there's a current_turn_team_id
+        state_data = self.db.get_session_state(self.current_session_id)
+        if not state_data["current_turn_team_id"] and team_ids:
+            # Set the turn to the first team
+            self.db.update_current_turn(self.current_session_id, team_ids[0])
+            # Optionally update your local self.current_session_info as well
+            self.current_session_info["current_turn_team_id"] = team_ids[0]
+
 
     def begin_game_loop(self):
         """

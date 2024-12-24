@@ -344,29 +344,29 @@ def draw_team_setup():
 
 def draw_gameplay():
     screen.fill(WHITE)
-    # If no session or session is inactive, show a message
+
+    # If no session or session is inactive
     if not game_logic.current_session_id:
         msg = font.render("No Active Session!", True, RED)
         screen.blit(msg, (50, 50))
         end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
-        return end_btn, None, None
+        return end_btn, None, None, None  # We'll return 4-tuple for convenience
 
     s_data = db.get_session(game_logic.current_session_id)
     if not s_data or not s_data["is_active"]:
         msg = font.render("Session is not active!", True, RED)
         screen.blit(msg, (50, 50))
         end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
-        return end_btn, None, None
+        return end_btn, None, None, None
 
-    # Check if we have an active question
+    # Make sure we have a question
     if "active_question" not in question_data:
-        # Attempt to fetch a new question
-        q = game_logic.begin_game_loop()
+        q = game_logic.begin_game_loop()  # get next random
         if q is None:
             question_data["active_question"] = None
         else:
             question_data["active_question"] = q
-            question_data["user_answer"] = ""
+            question_data["user_answer"] = ""  # For fill_in_blank only
 
     aq = question_data["active_question"]
     y_offset = 50
@@ -375,46 +375,73 @@ def draw_gameplay():
         screen.blit(msg, (50, y_offset))
         y_offset += 60
         end_btn = create_button(300, 500, 200, 50, RED, "End Session")
-        return end_btn, None, None
+        return end_btn, None, None, None
 
-    # Display question text
     qtype = aq["question_type"]
     q_text = aq["question"]
 
-    # If fill_in_blank, mask the blank text
+    # If fill_in_blank, mask the text
     if qtype == "fill_in_blank" and aq.get("fill_in_blank_text"):
         pat = re.escape(aq["fill_in_blank_text"])
         q_text = re.sub(pat, "_____", q_text, flags=re.IGNORECASE)
 
+    # Display the question
     quest_surf = small_font.render(q_text, True, BLACK)
     screen.blit(quest_surf, (50, y_offset))
     y_offset += 40
 
-    # user_answer box
-    ans_label = small_font.render("Your answer:", True, BLACK)
-    screen.blit(ans_label, (50, y_offset))
-    ans_box = pygame.Rect(200, y_offset - 5, 300, 36)
-    pygame.draw.rect(screen, GRAY, ans_box)
-    ans_text = question_data.get("user_answer", "")
-    ans_surf = small_font.render(ans_text, True, BLACK)
-    screen.blit(ans_surf, (ans_box.x+5, ans_box.y+5))
+    end_btn = create_button(50, 500, 200, 50, RED, "End Session")
+    # We'll keep track of some clickable elements in a list
+    # so we can handle them in handle_gameplay().
+    clickable_buttons = []
 
-    submit_btn = create_button(520, y_offset - 5, 100, 40, GREEN, "Submit")
+    # MULTIPLE CHOICE
+    if qtype == "multiple_choice":
+        options = aq.get("options", [])
+        # We'll draw each option as a button
+        for i, opt in enumerate(options):
+            btn = create_button(60, y_offset, 600, 40, BLUE, opt["text"], WHITE)
+            clickable_buttons.append(("MC_OPTION", i, btn))  
+            # We'll store a tuple with the type of click, index i, and the rect
+            y_offset += 50
 
+    # FILL IN BLANK
+    elif qtype == "fill_in_blank":
+        # Show an input box + "Submit"
+        ans_label = small_font.render("Your Answer:", True, BLACK)
+        screen.blit(ans_label, (50, y_offset))
+        ans_box = pygame.Rect(200, y_offset - 5, 300, 36)
+        pygame.draw.rect(screen, GRAY, ans_box)
+        typed = question_data.get("user_answer", "")
+        typed_render = small_font.render(typed, True, BLACK)
+        screen.blit(typed_render, (ans_box.x+5, ans_box.y+5))
+
+        submit_btn = create_button(520, y_offset - 5, 100, 40, GREEN, "Submit")
+        clickable_buttons.append(("FILL_SUBMIT", None, submit_btn))
+        clickable_buttons.append(("FILL_BOX", None, ans_box))
+
+    # OPEN ENDED
+    elif qtype == "open_ended":
+        # We won't collect typed input. Instead, we have two buttons: Mark Correct, Mark Wrong
+        correct_btn = create_button(60, y_offset, 200, 50, GREEN, "Mark Correct")
+        wrong_btn = create_button(300, y_offset, 200, 50, RED, "Mark Wrong")
+        clickable_buttons.append(("OPEN_CORRECT", None, correct_btn))
+        clickable_buttons.append(("OPEN_WRONG", None, wrong_btn))
+
+    # Show current scores
     y_offset += 70
-    # Show scores
     scores_label = small_font.render("Scores:", True, BLACK)
     screen.blit(scores_label, (50, y_offset))
     y_offset += 30
-
     st = game_logic.get_scores()
     for tid, sc in st.items():
-        team_surf = small_font.render(f"Team {tid}: {sc}", True, BLACK)
-        screen.blit(team_surf, (70, y_offset))
+        t_surf = small_font.render(f"Team {tid}: {sc}", True, BLACK)
+        screen.blit(t_surf, (70, y_offset))
         y_offset += 30
 
-    end_btn = create_button(50, 500, 200, 50, RED, "End Session")
-    return end_btn, ans_box, submit_btn
+    # Return everything we need
+    return end_btn, None, clickable_buttons, None
+
 
 # ---------------------------
 # Event Handlers
@@ -733,7 +760,8 @@ def handle_team_setup_keydown(event):
 
 def handle_gameplay(event, buttons):
     global current_state, question_data, focused_field
-    end_btn, ans_box, submit_btn = buttons
+    # buttons might be: (end_btn, something, clickable_buttons, something)
+    end_btn, _, clickable_buttons, _ = buttons
 
     if end_btn and end_btn.collidepoint(event.pos):
         game_logic.end_session()
@@ -741,44 +769,89 @@ def handle_gameplay(event, buttons):
         current_state = MAIN_MENU
         return
 
-    if ans_box and ans_box.collidepoint(event.pos):
-        focused_field = "user_answer"
-        return
+    # Now check the clickable_buttons
+    if clickable_buttons:
+        for (btn_type, idx, rect) in clickable_buttons:
+            if rect.collidepoint(event.pos):
+                # Handle logic based on btn_type
+                if btn_type == "MC_OPTION":
+                    # idx indicates which option was clicked
+                    handle_multiple_choice_click(idx)
+                    return
 
-    if submit_btn and submit_btn.collidepoint(event.pos):
-        aq = question_data.get("active_question", None)
-        if not aq:
-            return
-        user_ans = question_data.get("user_answer", "").strip()
-        qtype = aq["question_type"]
-        was_correct = False
-        pts = aq.get("points", 0)
+                elif btn_type == "FILL_SUBMIT":
+                    handle_fill_in_blank_submit()
+                    return
 
-        if qtype == "fill_in_blank":
-            correct = aq.get("fill_in_blank_text", "")
-            was_correct = (user_ans.lower() == correct.lower())
-        elif qtype == "multiple_choice":
-            # simplified approach:
-            correct_opts = [o["text"] for o in aq.get("options", []) if o["is_correct"]]
-            was_correct = any(user_ans.lower() == c.lower() for c in correct_opts)
-        elif qtype == "open_ended":
-            # If user types 'yes', we consider correct
-            was_correct = (user_ans.lower() == "yes")
+                elif btn_type == "FILL_BOX":
+                    # user clicked in the fill-in-blank box to type
+                    focused_field = "user_answer"
+                    return
 
-        print(f"[UI] Submitted answer='{user_ans}', was_correct={was_correct}")
-        game_logic.mark_answer(aq["id"], was_correct, pts)
-        # Force next question load
-        question_data["active_question"] = None
-        question_data["user_answer"] = ""
+                elif btn_type == "OPEN_CORRECT":
+                    handle_open_ended_correct(True)
+                    return
+
+                elif btn_type == "OPEN_WRONG":
+                    handle_open_ended_correct(False)
+                    return
+
 
 def handle_gameplay_keydown(event):
     global question_data, focused_field
-    if focused_field != "user_answer":
+    if focused_field == "user_answer":
+        if event.key == pygame.K_BACKSPACE:
+            question_data["user_answer"] = question_data["user_answer"][:-1]
+        else:
+            question_data["user_answer"] += event.unicode
+
+
+def handle_multiple_choice_click(option_index):
+    aq = question_data.get("active_question", None)
+    if not aq: 
         return
-    if event.key == pygame.K_BACKSPACE:
-        question_data["user_answer"] = question_data["user_answer"][:-1]
-    else:
-        question_data["user_answer"] += event.unicode
+    options = aq.get("options", [])
+    if option_index < 0 or option_index >= len(options):
+        return
+
+    chosen = options[option_index]
+    # Determine correctness
+    was_correct = chosen["is_correct"]
+    pts = aq.get("points", 0)
+    print(f"[UI] User clicked option '{chosen['text']}', was_correct={was_correct}")
+
+    game_logic.mark_answer(aq["id"], was_correct, pts)
+    # Force next question
+    question_data["active_question"] = None
+    question_data["user_answer"] = ""
+
+
+def handle_fill_in_blank_submit():
+    aq = question_data.get("active_question", None)
+    if not aq:
+        return
+    typed_ans = question_data.get("user_answer", "").strip()
+    correct = aq.get("fill_in_blank_text", "")
+    was_correct = (typed_ans.lower() == correct.lower())
+    pts = aq.get("points", 0)
+    print(f"[UI] Fill in blank submitted='{typed_ans}', correct='{correct}', was_correct={was_correct}")
+
+    game_logic.mark_answer(aq["id"], was_correct, pts)
+    question_data["active_question"] = None
+    question_data["user_answer"] = ""
+
+def handle_open_ended_correct(is_correct):
+    aq = question_data.get("active_question", None)
+    if not aq:
+        return
+    pts = aq.get("points", 0)
+    was_correct = True if is_correct else False
+    print(f"[UI] Open ended judged correct={was_correct}")
+    game_logic.mark_answer(aq["id"], was_correct, pts)
+    question_data["active_question"] = None
+    question_data["user_answer"] = ""
+
+
 
 # ---------------------------
 # Main Loop
