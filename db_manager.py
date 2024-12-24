@@ -27,7 +27,7 @@ class DBManager:
         """
         Creates the necessary tables if they do not exist:
           1. groups (id, group_name)
-          2. questions (id, question, group_id, option1, option2, option3, option4, correct_option, points, category)
+          2. questions (id, question, group_id, option1, option2, option3, option4, correct_option, points, category, question_type)
           3. sessions (id, created_at, is_active, time_per_question, current_turn_team_id, group_id)
           4. teams (id, session_id, team_name)
           5. players (id, team_id, player_name)
