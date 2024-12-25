@@ -1,0 +1,51 @@
+{
+  "screen": {
+    "width": 800,
+    "height": 600,
+    "title": "Clynboozle GUI"
+  },
+  "colors": {
+    "white": [255, 255, 255],
+    "black": [0, 0, 0],
+    "blue": [0, 0, 255],
+    "gray": [200, 200, 200],
+    "red": [255, 0, 0],
+    "green": [0, 255, 0],
+    "dark_red": [200, 0, 0],
+    "dark_green": [0, 200, 0]
+  },
+  "fonts": {
+    "default_size": 36,
+    "small_size": 28
+  },
+  "buttons": {
+    "default_width": 200,
+    "default_height": 50,
+    "default_color": [0, 0, 255],
+    "text_color": [255, 255, 255]
+  },
+  "game_states": [
+    "MAIN_MENU",
+    "MANAGE_GROUPS",
+    "ADD_GROUP",
+    "SELECT_GROUP",
+    "VIEW_GROUP",
+    "SELECT_QUESTION_TYPE",
+    "ADD_QUESTIONS",
+    "SESSION_SETUP",
+    "TEAM_SETUP",
+    "GAMEPLAY",
+    "FEEDBACK"
+  ],
+  "session_setup": {
+    "default_time_per_question": 30
+  },
+  "keyboard": {
+    "key_delay": 300,
+    "key_repeat": 30
+  },
+  "messages": {
+    "no_more_questions": "No more questions left!",
+    "no_active_session": "No Active Session!"
+  }
+}

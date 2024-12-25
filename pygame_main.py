@@ -2,29 +2,34 @@ import pygame
 import re
 from db_manager import DBManager
 from game_logic import GameLogic
+import json
+
 
 # ---------------------------
 # PyGame Initialization
 # ---------------------------
 pygame.init()
-pygame.key.set_repeat(300, 30)  # Delay 300ms, repeat every 30ms
-SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Clynboozle GUI")
 
-# Colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-BLUE = (0, 0, 255)
-GRAY = (200, 200, 200)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-DARK_RED = (200, 0, 0)
-DARK_GREEN = (0, 200, 0)
+def load_config(file_path):
+    with open(file_path, 'r') as f:
+        return json.load(f)
+
+config = load_config("config.json")
+
+# Screen Settings
+SCREEN_WIDTH = config["screen"]["width"]
+SCREEN_HEIGHT = config["screen"]["height"]
+pygame.display.set_caption(config["screen"]["title"])
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
 # Fonts
-font = pygame.font.Font(None, 36)
-small_font = pygame.font.Font(None, 28)
+FONT_SIZE = config["fonts"]["default_size"]
+SMALL_FONT_SIZE = config["fonts"]["small_size"]
+font = pygame.font.Font(None, FONT_SIZE)
+small_font = pygame.font.Font(None, SMALL_FONT_SIZE)
+
+# Keyboard
+pygame.key.set_repeat(config["keyboard"]["key_delay"], config["keyboard"]["key_repeat"])
 
 # ---------------------------
 # Game States
@@ -70,7 +75,7 @@ team_input_text = "" # used to type new team name
 # ---------------------------
 # Helper Functions
 # ---------------------------
-def create_button(x, y, width, height, color, text, text_color=WHITE):
+def create_button(x, y, width, height, color, text, text_color='white'):
     """
     Draw a rectangular button with center-aligned text.
     Returns the button's rect for collision checking.
@@ -91,9 +96,9 @@ def draw_back_button():
     """
     A common "Back" button in the bottom-left corner.
     """
-    return create_button(50, 500, 100, 50, BLUE, "Back")
+    return create_button(50, 500, 100, 50, 'blue', "Back")
 
-def draw_text_centered(y, text, color=BLACK, fnt=font):
+def draw_text_centered(y, text, color='black', fnt=font):
     """
     Draw the given text horizontally centered at the given y.
     """
@@ -120,8 +125,8 @@ def draw_final_scores():
     Displays final scoreboard and winner(s).
     Returns a rect for "End Session" button, or None if you prefer.
     """
-    screen.fill(WHITE)
-    draw_text_centered(50, "No more questions left!", RED)
+    screen.fill('white')
+    draw_text_centered(50, "No more questions left!", 'red')
 
     final_scores = game_logic.get_scores()  # {team_id: score}
     team_list_local = game_logic.teams
@@ -135,13 +140,13 @@ def draw_final_scores():
         winner_ids = []
 
     y_offset = 120
-    scores_label = font.render("Final Scores:", True, BLACK)
+    scores_label = font.render("Final Scores:", True, 'black')
     screen.blit(scores_label, (50, y_offset))
     y_offset += 50
 
     for tid, sc in final_scores.items():
         team_name = get_team_name(tid)
-        line_surf = small_font.render(f"{team_name}: {sc}", True, BLACK)
+        line_surf = small_font.render(f"{team_name}: {sc}", True, 'black')
         screen.blit(line_surf, (70, y_offset))
         y_offset += 30
 
@@ -157,46 +162,46 @@ def draw_final_scores():
     else:
         winner_msg = "No winners?"  # (shouldn't happen if there's at least 1 team)
 
-    winner_surf = font.render(winner_msg, True, GREEN)
+    winner_surf = font.render(winner_msg, True, 'green')
     screen.blit(winner_surf, (50, y_offset))
     y_offset += 60
 
-    end_btn = create_button(300, 500, 200, 50, RED, "End Session")
+    end_btn = create_button(300, 500, 200, 50, 'red', "End Session")
     return end_btn
 
 # ---------------------------
 # Draw Screens
 # ---------------------------
 def draw_main_menu():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Clynboozle")
-    start_game_btn = create_button(300, 200, 225, 50, BLUE, "Start Game")
-    manage_groups_btn = create_button(300, 300, 225, 50, BLUE, "Manage Groups")
-    quit_btn = create_button(300, 400, 225, 50, BLUE, "Quit")
+    start_game_btn = create_button(300, 200, 225, 50, 'blue', "Start Game")
+    manage_groups_btn = create_button(300, 300, 225, 50, 'blue', "Manage Groups")
+    quit_btn = create_button(300, 400, 225, 50, 'blue', "Quit")
     return start_game_btn, manage_groups_btn, quit_btn
 
 def draw_manage_groups():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Manage Groups")
     back_btn = draw_back_button()
-    add_group_btn = create_button(300, 200, 200, 50, BLUE, "Add Group")
-    select_group_btn = create_button(300, 300, 200, 50, BLUE, "View Groups")
+    add_group_btn = create_button(300, 200, 200, 50, 'blue', "Add Group")
+    select_group_btn = create_button(300, 300, 200, 50, 'blue', "View Groups")
     return back_btn, add_group_btn, select_group_btn
 
 def draw_add_group(input_text):
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Add New Group")
     back_btn = draw_back_button()
     input_box = pygame.Rect(200, 250, 400, 50)
-    pygame.draw.rect(screen, GRAY, input_box)
-    input_text_render = font.render(input_text, True, BLACK)
+    pygame.draw.rect(screen, 'gray', input_box)
+    input_text_render = font.render(input_text, True, 'black')
     screen.blit(input_text_render, (input_box.x + 10, input_box.y + 10))
 
-    save_btn = create_button(300, 350, 200, 50, BLUE, "Save")
+    save_btn = create_button(300, 350, 200, 50, 'blue', "Save")
     return back_btn, input_box, save_btn
 
 def draw_select_group():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Select a Group")
     back_btn = draw_back_button()
 
@@ -210,53 +215,53 @@ def draw_select_group():
     conn.close()
 
     for group in groups:
-        group_btn = create_button(50, y_offset, 700, 50, BLUE, f"{group[0]}: {group[1]}")
+        group_btn = create_button(50, y_offset, 700, 50, 'blue', f"{group[0]}: {group[1]}")
         group_buttons.append((group_btn, group[0]))
         y_offset += 60
 
     return back_btn, group_buttons
 
 def draw_view_group(question_group_id):
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, f"Group {question_group_id} Questions")
     back_btn = draw_back_button()
-    add_question_btn = create_button(300, 500, 200, 50, BLUE, "Add Question")
-    delete_group_btn = create_button(600, 500, 200, 50, RED, "Delete Group")
+    add_question_btn = create_button(300, 500, 200, 50, 'blue', "Add Question")
+    delete_group_btn = create_button(600, 500, 200, 50, 'red', "Delete Group")
 
     question_buttons = []
     y_offset = 150
 
     questions = db.get_questions_for_group(question_group_id)
     for q in questions:
-        q_btn = create_button(50, y_offset, 600, 50, GRAY, f"{q['question']}")
-        del_btn = create_button(675, y_offset, 100, 50, RED, "Delete")
+        q_btn = create_button(50, y_offset, 600, 50, 'gray', f"{q['question']}")
+        del_btn = create_button(675, y_offset, 100, 50, 'red', "Delete")
         question_buttons.append((q_btn, del_btn, q['id']))
         y_offset += 60
 
     return back_btn, add_question_btn, delete_group_btn, question_buttons
 
 def draw_select_question_type():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Select Question Type")
     back_btn = draw_back_button()
-    multiple_choice_btn = create_button(300, 200, 300, 50, BLUE, "Multiple Choice")
-    fill_in_blank_btn = create_button(300, 300, 300, 50, BLUE, "Fill in the Blank")
-    open_ended_btn = create_button(300, 400, 300, 50, BLUE, "Open Ended")
+    multiple_choice_btn = create_button(300, 200, 300, 50, 'blue', "Multiple Choice")
+    fill_in_blank_btn = create_button(300, 300, 300, 50, 'blue', "Fill in the Blank")
+    open_ended_btn = create_button(300, 400, 300, 50, 'blue', "Open Ended")
     return back_btn, multiple_choice_btn, fill_in_blank_btn, open_ended_btn
 
 def draw_add_questions():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Add Question Details")
     back_btn = draw_back_button()
     y_offset = 120
     input_fields = []
 
     # Question text
-    label_q = small_font.render("Question:", True, BLACK)
+    label_q = small_font.render("Question:", True, 'black')
     screen.blit(label_q, (50, y_offset))
     question_box = pygame.Rect(200, y_offset - 5, 500, 36)
-    pygame.draw.rect(screen, GRAY, question_box)
-    text_render = small_font.render(question_data.get("question", ""), True, BLACK)
+    pygame.draw.rect(screen, 'gray', question_box)
+    text_render = small_font.render(question_data.get("question", ""), True, 'black')
     screen.blit(text_render, (question_box.x + 5, question_box.y + 5))
     input_fields.append(("question", question_box))
     y_offset += 50
@@ -267,62 +272,62 @@ def draw_add_questions():
     if question_data.get("question_type") == "multiple_choice":
         options = question_data.get("options", [])
         for i, opt in enumerate(options):
-            label_opt = small_font.render(f"Option {i+1}:", True, BLACK)
+            label_opt = small_font.render(f"Option {i+1}:", True, 'black')
             screen.blit(label_opt, (50, y_offset))
 
-            box_color = GREEN if opt.get("is_correct") else GRAY
+            box_color = 'green' if opt.get("is_correct") else 'gray'
             option_box = pygame.Rect(200, y_offset - 5, 400, 36)
             pygame.draw.rect(screen, box_color, option_box)
-            option_text_render = small_font.render(opt["text"], True, BLACK)
+            option_text_render = small_font.render(opt["text"], True, 'black')
             screen.blit(option_text_render, (option_box.x + 5, option_box.y + 5))
             input_fields.append((f"option_{i}", option_box))
 
             toggle_correct_btn = pygame.Rect(610, y_offset - 5, 30, 36)
-            toggle_color = DARK_GREEN if opt.get("is_correct") else DARK_RED
+            toggle_color = 'green' if opt.get("is_correct") else 'red'
             pygame.draw.rect(screen, toggle_color, toggle_correct_btn)
             input_fields.append((f"toggle_correct_{i}", toggle_correct_btn))
 
             y_offset += 50
 
-        add_choice_btn = create_button(50, y_offset, 150, 40, BLUE, "Add Choice")
+        add_choice_btn = create_button(50, y_offset, 150, 40, 'blue', "Add Choice")
         y_offset += 60
 
     # If fill in blank
     elif question_data.get("question_type") == "fill_in_blank":
-        label_blank = small_font.render("Fill-in text:", True, BLACK)
+        label_blank = small_font.render("Fill-in text:", True, 'black')
         screen.blit(label_blank, (50, y_offset))
         blank_box = pygame.Rect(200, y_offset - 5, 300, 36)
-        pygame.draw.rect(screen, GRAY, blank_box)
+        pygame.draw.rect(screen, 'gray', blank_box)
         blank_text_render = small_font.render(
-            str(question_data.get("blank_text", "")), True, BLACK
+            str(question_data.get("blank_text", "")), True, 'black'
         )
         screen.blit(blank_text_render, (blank_box.x + 5, blank_box.y + 5))
         input_fields.append(("blank_text", blank_box))
         y_offset += 50
 
     # Points
-    label_points = small_font.render("Points:", True, BLACK)
+    label_points = small_font.render("Points:", True, 'black')
     screen.blit(label_points, (50, y_offset))
     points_box = pygame.Rect(200, y_offset - 5, 100, 36)
-    pygame.draw.rect(screen, GRAY, points_box)
-    points_text_render = small_font.render(str(question_data.get("points", "10")), True, BLACK)
+    pygame.draw.rect(screen, 'gray', points_box)
+    points_text_render = small_font.render(str(question_data.get("points", "10")), True, 'black')
     screen.blit(points_text_render, (points_box.x + 5, points_box.y + 5))
     input_fields.append(("points", points_box))
     y_offset += 50
 
     # Category
-    label_cat = small_font.render("Category:", True, BLACK)
+    label_cat = small_font.render("Category:", True, 'black')
     screen.blit(label_cat, (50, y_offset))
     cat_box = pygame.Rect(200, y_offset - 5, 300, 36)
-    pygame.draw.rect(screen, GRAY, cat_box)
-    cat_text_render = small_font.render(str(question_data.get("category", "")), True, BLACK)
+    pygame.draw.rect(screen, 'gray', cat_box)
+    cat_text_render = small_font.render(str(question_data.get("category", "")), True, 'black')
     screen.blit(cat_text_render, (cat_box.x + 5, cat_box.y + 5))
     input_fields.append(("category", cat_box))
     y_offset += 50
 
     # Save/Update
     save_btn = create_button(
-        300, y_offset, 200, 50, BLUE,
+        300, y_offset, 200, 50, 'blue',
         "Update" if question_data.get("is_edit") else "Save"
     )
 
@@ -332,12 +337,12 @@ def draw_add_questions():
 # NEW SCREENS FOR GAME LOGIC
 # ---------------------------
 def draw_session_setup():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Session Setup")
 
     # Show groups to pick from
     y_offset = 120
-    group_label = small_font.render("Select Group ID:", True, BLACK)
+    group_label = small_font.render("Select Group ID:", True, 'black')
     screen.blit(group_label, (50, y_offset))
 
     conn = db.create_connection()
@@ -350,7 +355,7 @@ def draw_session_setup():
     gx = 250
     for (gid, gname) in rows:
         txt = f"{gid}: {gname}"
-        btn = create_button(gx, y_offset, 250, 40, (0, 200, 200), txt, BLACK)
+        btn = create_button(gx, y_offset, 250, 40, (0, 200, 200), txt, 'black')
         group_buttons.append((btn, gid))
         gx += 260
         if gx + 250 > SCREEN_WIDTH:
@@ -358,44 +363,44 @@ def draw_session_setup():
             y_offset += 60
 
     y_offset += 80
-    time_label = small_font.render("Time per Question (sec):", True, BLACK)
+    time_label = small_font.render("Time per Question (sec):", True, 'black')
     screen.blit(time_label, (50, y_offset))
     time_box = pygame.Rect(300, y_offset - 5, 100, 36)
-    pygame.draw.rect(screen, GRAY, time_box)
-    t_render = small_font.render(session_setup_data["time_per_question"], True, BLACK)
+    pygame.draw.rect(screen, 'gray', time_box)
+    t_render = small_font.render(session_setup_data["time_per_question"], True, 'black')
     screen.blit(t_render, (time_box.x + 5, time_box.y + 5))
 
     y_offset += 70
-    create_session_btn = create_button(300, y_offset, 200, 50, BLUE, "Create Session")
+    create_session_btn = create_button(300, y_offset, 200, 50, 'blue', "Create Session")
     back_btn = draw_back_button()
 
     return back_btn, group_buttons, time_box, create_session_btn
 
 def draw_team_setup():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Team Setup")
 
     y_offset = 120
-    t_label = small_font.render("Current Teams:", True, BLACK)
+    t_label = small_font.render("Current Teams:", True, 'black')
     screen.blit(t_label, (50, y_offset))
     y_offset += 40
     for nm in team_list:
-        txt = small_font.render(f"- {nm}", True, BLACK)
+        txt = small_font.render(f"- {nm}", True, 'black')
         screen.blit(txt, (70, y_offset))
         y_offset += 30
 
     # Input for new team
     y_offset += 20
-    new_team_label = small_font.render("Add Team Name:", True, BLACK)
+    new_team_label = small_font.render("Add Team Name:", True, 'black')
     screen.blit(new_team_label, (50, y_offset))
     team_box = pygame.Rect(250, y_offset - 5, 300, 36)
-    pygame.draw.rect(screen, GRAY, team_box)
-    team_text_render = small_font.render(team_input_text, True, BLACK)
+    pygame.draw.rect(screen, 'gray', team_box)
+    team_text_render = small_font.render(team_input_text, True, 'black')
     screen.blit(team_text_render, (team_box.x + 5, team_box.y + 5))
 
     y_offset += 60
-    add_team_btn = create_button(50, y_offset, 150, 40, BLUE, "Add Team")
-    done_btn = create_button(250, y_offset, 150, 40, GREEN, "Done")
+    add_team_btn = create_button(50, y_offset, 150, 40, 'blue', "Add Team")
+    done_btn = create_button(250, y_offset, 150, 40, 'green', "Done")
 
     back_btn = draw_back_button()
 
@@ -405,20 +410,20 @@ def draw_gameplay():
     """
     The main question screen. If no question left, we show final scores.
     """
-    screen.fill(WHITE)
+    screen.fill('white')
 
     # If no active session
     if not game_logic.current_session_id:
-        msg = font.render("No Active Session!", True, RED)
+        msg = font.render("No Active Session!", True, 'red')
         screen.blit(msg, (50, 50))
-        end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
+        end_btn = create_button(300, 500, 200, 50, 'red', "Back to Menu")
         return end_btn, None, None, None
 
     s_data = db.get_session(game_logic.current_session_id)
     if not s_data or not s_data["is_active"]:
-        msg = font.render("Session is not active!", True, RED)
+        msg = font.render("Session is not active!", True, 'red')
         screen.blit(msg, (50, 50))
-        end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
+        end_btn = create_button(300, 500, 200, 50, 'red', "Back to Menu")
         return end_btn, None, None, None
 
     # Ensure we have a question
@@ -445,11 +450,11 @@ def draw_gameplay():
         pat = re.escape(aq["fill_in_blank_text"])
         q_text = re.sub(pat, "_____", q_text, flags=re.IGNORECASE)
 
-    quest_surf = small_font.render(q_text, True, BLACK)
+    quest_surf = small_font.render(q_text, True, 'black')
     screen.blit(quest_surf, (50, y_offset))
     y_offset += 40
 
-    end_btn = create_button(50, 500, 200, 50, RED, "End Session")
+    end_btn = create_button(50, 500, 200, 50, 'red', "End Session")
     clickable_buttons = []
 
     # MULTIPLE CHOICE
@@ -457,7 +462,7 @@ def draw_gameplay():
         options = aq.get("options", [])
         # We'll draw each option as a button
         for i, opt in enumerate(options):
-            btn = create_button(60, y_offset, 600, 40, BLUE, opt["text"], WHITE)
+            btn = create_button(60, y_offset, 600, 40, 'blue', opt["text"], 'white')
             clickable_buttons.append(("MC_OPTION", i, btn))  
             # We'll store a tuple with the type of click, index i, and the rect
             y_offset += 50
@@ -465,29 +470,29 @@ def draw_gameplay():
     # FILL IN BLANK
     elif qtype == "fill_in_blank":
         # Show an input box + "Submit"
-        ans_label = small_font.render("Your Answer:", True, BLACK)
+        ans_label = small_font.render("Your Answer:", True, 'black')
         screen.blit(ans_label, (50, y_offset))
         ans_box = pygame.Rect(200, y_offset - 5, 300, 36)
-        pygame.draw.rect(screen, GRAY, ans_box)
+        pygame.draw.rect(screen, 'gray', ans_box)
         typed = question_data.get("user_answer", "")
-        typed_render = small_font.render(typed, True, BLACK)
+        typed_render = small_font.render(typed, True, 'black')
         screen.blit(typed_render, (ans_box.x+5, ans_box.y+5))
 
-        submit_btn = create_button(520, y_offset - 5, 100, 40, GREEN, "Submit")
+        submit_btn = create_button(520, y_offset - 5, 100, 40, 'green', "Submit")
         clickable_buttons.append(("FILL_SUBMIT", None, submit_btn))
         clickable_buttons.append(("FILL_BOX", None, ans_box))
 
     # OPEN ENDED
     elif qtype == "open_ended":
         # We won't collect typed input. Instead, we have two buttons: Mark Correct, Mark Wrong
-        correct_btn = create_button(60, y_offset, 200, 50, GREEN, "Mark Correct")
-        wrong_btn = create_button(300, y_offset, 200, 50, RED, "Mark Wrong")
+        correct_btn = create_button(60, y_offset, 200, 50, 'green', "Mark Correct")
+        wrong_btn = create_button(300, y_offset, 200, 50, 'red', "Mark Wrong")
         clickable_buttons.append(("OPEN_CORRECT", None, correct_btn))
         clickable_buttons.append(("OPEN_WRONG", None, wrong_btn))
 
     # Show current scores
     y_offset += 70
-    scores_label = small_font.render("Scores:", True, BLACK)
+    scores_label = small_font.render("Scores:", True, 'black')
     screen.blit(scores_label, (50, y_offset))
     y_offset += 30
     st = game_logic.get_scores()
@@ -501,7 +506,7 @@ def draw_gameplay():
                 break
         
         text_str = f"{team_name}: {sc}"
-        t_surf = small_font.render(text_str, True, BLACK)
+        t_surf = small_font.render(text_str, True, 'black')
         screen.blit(t_surf, (70, y_offset))
         y_offset += 30
 
@@ -509,23 +514,23 @@ def draw_gameplay():
     return end_btn, None, clickable_buttons, None
 
 def draw_feedback():
-    screen.fill(WHITE)
+    screen.fill('white')
     draw_text_centered(50, "Result")
 
     was_correct = question_data.get("last_was_correct", False)
     msg_text = "Incorrect!"
-    msg_color = RED
+    msg_color = 'red'
 
     if was_correct:
         awarded = question_data.get("last_points", 0)
         msg_text = f"Correct! +{awarded} points!"
-        msg_color = GREEN
+        msg_color = 'green'
 
     msg_surf = font.render(msg_text, True, msg_color)
     screen.blit(msg_surf, (SCREEN_WIDTH//2 - msg_surf.get_width()//2, 150))
 
-    next_btn = create_button(300, 300, 200, 50, BLUE, "Next Question")
-    end_btn = create_button(300, 400, 200, 50, RED, "End Session")
+    next_btn = create_button(300, 300, 200, 50, 'blue', "Next Question")
+    end_btn = create_button(300, 400, 200, 50, 'red', "End Session")
     return next_btn, end_btn
 
 # ---------------------------
@@ -535,14 +540,13 @@ def handle_main_menu(event, buttons):
     global current_state
     start_game_btn, manage_groups_btn, quit_btn = buttons
     if start_game_btn.collidepoint(event.pos):
-        current_state = SESSION_SETUP  # Jump to session setup
+        current_state = SESSION_SETUP
     elif manage_groups_btn.collidepoint(event.pos):
         current_state = MANAGE_GROUPS
     elif quit_btn.collidepoint(event.pos):
         pygame.quit()
         exit()
 
-# Existing "manage groups" event handlers remain as is...
 def handle_manage_groups(event, buttons):
     global current_state
     back_btn, add_group_btn, select_group_btn = buttons
