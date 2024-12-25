@@ -13,14 +13,32 @@ class DBManager:
         self.db_name = db_name
         self.create_tables()
 
+    # ----------------------------------------------------------------
+    #                          CONNECTIONS
+    # ----------------------------------------------------------------
     def create_connection(self):
         """
         Establishes a connection to the SQLite database.
         Returns the connection object.
         """
-        conn = sqlite3.connect(self.db_name)
-        return conn
+        return sqlite3.connect(self.db_name)
 
+    def _exec_commit(self, sql, params=None):
+        """
+        Helper method to connect, execute a single SQL, commit, and close.
+        Returns the cursor and connection if needed.
+        """
+        if params is None:
+            params = ()
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
+        conn.commit()
+        return cursor, conn
+
+    # ----------------------------------------------------------------
+    #                          TABLE CREATION
+    # ----------------------------------------------------------------
     def create_tables(self):
         """
         Creates the necessary tables if they do not exist:
@@ -45,13 +63,12 @@ class DBManager:
         """)
 
         # 2. questions table
-        #    We'll add fill_in_blank_text as a column.
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 question_group_id INTEGER NOT NULL,
                 question TEXT NOT NULL,
-                fill_in_blank_text TEXT,  -- NEW COLUMN for fill-in blank
+                fill_in_blank_text TEXT,
                 points INTEGER DEFAULT 10,
                 category TEXT,
                 question_type TEXT,
@@ -59,13 +76,13 @@ class DBManager:
             );
         """)
 
-        # If the column didn't exist previously, try an ALTER TABLE just in case:
+        # Attempt adding fill_in_blank_text if it didn't exist
         try:
             cursor.execute("ALTER TABLE questions ADD COLUMN fill_in_blank_text TEXT;")
-        except:
-            pass  # If it already exists, we'll ignore the error
+        except sqlite3.OperationalError:
+            pass  # Already exists, ignore
 
-        # 3. question_options table (NEW)
+        # 3. question_options table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS question_options (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +93,7 @@ class DBManager:
             );
         """)
 
-        # 4. sessions table (has question_group_id column)
+        # 4. sessions table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -138,51 +155,46 @@ class DBManager:
         conn.commit()
         conn.close()
 
-    # ----------------------
-    # GROUPS + QUESTIONS
-    # ----------------------
+    # ----------------------------------------------------------------
+    #                          GROUPS + QUESTIONS
+    # ----------------------------------------------------------------
+
     def insert_group(self, group_name):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO groups (group_name) 
+        """
+        Inserts a new row into 'groups' and returns the new group's ID.
+        """
+        sql = """
+            INSERT INTO groups (group_name)
             VALUES (?);
-        """, (group_name,))
-        conn.commit()
-        question_group_id = cursor.lastrowid
+        """
+        cursor, conn = self._exec_commit(sql, (group_name,))
+        group_id = cursor.lastrowid
         conn.close()
-        return question_group_id
+        return group_id
 
     def insert_question(self, question_data):
         """
         Inserts a question record and any associated options.
-        
-        question_data might look like:
+
+        question_data example:
         {
             "question_group_id": 1,
             "question": "Sample multiple-choice question",
             "points": 10,
             "category": "History",
             "question_type": "multiple_choice",
-            "blank_text": "206" (for fill_in_blank questions),
+            "blank_text": "206",  # for fill_in_blank
             "options": [
                 {"text": "Option A", "is_correct": False},
-                {"text": "Option B", "is_correct": True},
                 ...
             ]
         }
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-
-        # If question_type == "fill_in_blank", store the text in fill_in_blank_text
-        # Otherwise keep it None.
         fill_text = None
         if question_data.get('question_type') == 'fill_in_blank':
             fill_text = question_data.get('blank_text', '')
 
-        # Insert the question record
-        cursor.execute("""
+        sql = """
             INSERT INTO questions (
                 question_group_id,
                 question,
@@ -191,18 +203,21 @@ class DBManager:
                 category,
                 question_type
             ) VALUES (?, ?, ?, ?, ?, ?);
-        """, (
+        """
+        params = (
             question_data.get('question_group_id'),
             question_data.get('question'),
             fill_text,
             question_data.get('points', 10),
             question_data.get('category', ''),
             question_data.get('question_type', 'multiple_choice')
-        ))
+        )
 
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params)
         question_id = cursor.lastrowid
 
-        # If it's multiple-choice, we insert the options
         if question_data.get('question_type') == 'multiple_choice':
             for opt in question_data.get('options', []):
                 cursor.execute("""
@@ -231,48 +246,51 @@ class DBManager:
             "options": [ ... ]  # only relevant for multiple_choice
         }
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-
         fill_text = None
         if question_data.get('question_type') == 'fill_in_blank':
             fill_text = question_data.get('blank_text', '')
 
-        # Update the main question record
-        cursor.execute("""
+        sql_update = """
             UPDATE questions
-            SET 
+            SET
                 question = ?,
                 fill_in_blank_text = ?,
                 points = ?,
                 category = ?,
                 question_type = ?
             WHERE id = ?;
-        """, (
+        """
+        params = (
             question_data.get('question'),
             fill_text,
             question_data.get('points'),
             question_data.get('category'),
             question_data.get('question_type'),
             question_data.get('question_id')
-        ))
+        )
+
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql_update, params)
 
         # If multiple-choice, update the options
         if question_data.get('question_type') == 'multiple_choice':
-            # Delete old options
             cursor.execute("""
                 DELETE FROM question_options
                 WHERE question_id = ?;
             """, (question_data["question_id"],))
 
-            # Insert new ones
             for opt in question_data.get('options', []):
                 cursor.execute("""
                     INSERT INTO question_options (question_id, option_text, is_correct)
                     VALUES (?, ?, ?);
-                """, (question_data["question_id"], opt["text"], 1 if opt["is_correct"] else 0))
+                """, (
+                    question_data["question_id"],
+                    opt["text"],
+                    1 if opt["is_correct"] else 0
+                ))
         else:
-            # If it's not multiple_choice, remove existing options if any
+            # If not multiple_choice, remove existing options if any
             cursor.execute("""
                 DELETE FROM question_options
                 WHERE question_id = ?;
@@ -283,18 +301,18 @@ class DBManager:
 
     def get_question(self, question_id):
         """
-        Retrieves a single question by ID and its options (if multiple_choice),
-        and fill_in_blank_text if fill_in_blank.
-        Returns a dict or None if not found.
+        Retrieves a single question by ID and its options (if multiple_choice).
+        """
+        sql = """
+            SELECT
+                id, question_group_id, question, fill_in_blank_text, 
+                points, category, question_type
+            FROM questions
+            WHERE id = ?;
         """
         conn = self.create_connection()
         cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, question_group_id, question, fill_in_blank_text, points, category, question_type
-            FROM questions
-            WHERE id = ?;
-        """, (question_id,))
+        cursor.execute(sql, (question_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
@@ -304,19 +322,18 @@ class DBManager:
             'id': row[0],
             'question_group_id': row[1],
             'question': row[2],
-            'fill_in_blank_text': row[3],  # new
+            'fill_in_blank_text': row[3],
             'points': row[4],
             'category': row[5],
             'question_type': row[6],
             'options': []
         }
 
-        # If multiple choice, fetch the options from question_options
         if question_dict['question_type'] == 'multiple_choice':
             cursor.execute("""
                 SELECT id, option_text, is_correct
                 FROM question_options
-                WHERE question_id = ?
+                WHERE question_id = ?;
             """, (question_id,))
             option_rows = cursor.fetchall()
             for opt_row in option_rows:
@@ -331,19 +348,18 @@ class DBManager:
 
     def get_questions_for_group(self, question_group_id):
         """
-        Fetches all questions for a particular group (only basic question info).
-        Use get_question(question_id) to get the detailed options if needed.
+        Fetches all questions for a particular group (basic info).
+        """
+        sql = """
+            SELECT id, question
+            FROM questions
+            WHERE question_group_id = ?;
         """
         conn = self.create_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, question 
-            FROM questions
-            WHERE question_group_id = ?;
-        """, (question_group_id,))
+        cursor.execute(sql, (question_group_id,))
         rows = cursor.fetchall()
         conn.close()
-        # Return a list of dicts
         return [{'id': r[0], 'question': r[1]} for r in rows]
 
     def delete_question(self, question_id):
@@ -352,14 +368,14 @@ class DBManager:
         """
         conn = self.create_connection()
         cursor = conn.cursor()
-        
-        # First, delete options associated with the question
+
+        # Delete options first
         cursor.execute("""
             DELETE FROM question_options
             WHERE question_id = ?;
         """, (question_id,))
 
-        # Then delete the question itself
+        # Then the question itself
         cursor.execute("""
             DELETE FROM questions
             WHERE id = ?;
@@ -446,11 +462,9 @@ class DBManager:
         conn.close()
         return question_dict
 
-
-
     def delete_group(self, question_group_id):
         """
-        Deletes a group and all associated questions and options.
+        Deletes a group and all associated questions (and their options).
         """
         # 1. Find all questions for this group
         questions = self.get_questions_for_group(question_group_id)
@@ -471,7 +485,7 @@ class DBManager:
             WHERE question_group_id = ?;
         """, (question_group_id,))
 
-        # 4. Finally, delete the group itself
+        # 4. Delete the group itself
         cursor.execute("""
             DELETE FROM groups
             WHERE id = ?;
@@ -480,37 +494,37 @@ class DBManager:
         conn.commit()
         conn.close()
 
-    # ----------------------
-    # SESSIONS
-    # ----------------------
+    # ----------------------------------------------------------------
+    #                          SESSIONS
+    # ----------------------------------------------------------------
     def create_session(self, time_per_question, question_group_id):
         """
-        Inserts a new session record into the sessions table,
-        storing time_per_question and the chosen question_group_id.
+        Inserts a new session record, storing time_per_question and question_group_id.
         Returns the new session_id.
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             INSERT INTO sessions (time_per_question, is_active, question_group_id)
             VALUES (?, 1, ?);
-        """, (time_per_question, question_group_id))
-        conn.commit()
-        session_id = cursor.lastrowid
+        """
+        cursor, conn = self._exec_commit(sql, (time_per_question, question_group_id))
+        sid = cursor.lastrowid
         conn.close()
-        return session_id
+        return sid
 
     def get_session(self, session_id):
         """
         Retrieves session info by session_id, including question_group_id.
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, created_at, is_active, time_per_question, current_turn_team_id, question_group_id
+        sql = """
+            SELECT
+                id, created_at, is_active, time_per_question,
+                current_turn_team_id, question_group_id
             FROM sessions
             WHERE id = ?;
-        """, (session_id,))
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, (session_id,))
         row = cursor.fetchone()
         conn.close()
 
@@ -530,48 +544,43 @@ class DBManager:
         """
         Marks a session active/inactive.
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             UPDATE sessions
             SET is_active = ?
             WHERE id = ?;
-        """, (1 if is_active else 0, session_id))
-        conn.commit()
-        conn.close()
+        """
+        self._exec_commit(sql, (1 if is_active else 0, session_id))
 
-    # ----------------------
-    # TEAMS + PLAYERS
-    # ----------------------
+    # ----------------------------------------------------------------
+    #                        TEAMS + PLAYERS
+    # ----------------------------------------------------------------
     def add_team(self, session_id, team_name):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             INSERT INTO teams (session_id, team_name)
             VALUES (?, ?);
-        """, (session_id, team_name))
-        conn.commit()
+        """
+        cursor, conn = self._exec_commit(sql, (session_id, team_name))
         team_id = cursor.lastrowid
         conn.close()
         return team_id
 
     def add_player_to_team(self, team_id, player_name):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             INSERT INTO players (team_id, player_name)
             VALUES (?, ?);
-        """, (team_id, player_name))
-        conn.commit()
+        """
+        cursor, conn = self._exec_commit(sql, (team_id, player_name))
         player_id = cursor.lastrowid
         conn.close()
         return player_id
 
     def get_teams_for_session(self, session_id):
+        """
+        Returns a list of teams in this session, each with a list of players.
+        """
         conn = self.create_connection()
         cursor = conn.cursor()
 
-        # Fetch teams
         cursor.execute("""
             SELECT id, team_name
             FROM teams
@@ -580,25 +589,18 @@ class DBManager:
         team_rows = cursor.fetchall()
 
         results = []
-        for row in team_rows:
-            team_id = row[0]
-            team_name = row[1]
-
-            # Fetch players
+        for (team_id, team_name) in team_rows:
+            # get players
             cursor.execute("""
                 SELECT id, player_name
                 FROM players
                 WHERE team_id = ?;
             """, (team_id,))
             player_rows = cursor.fetchall()
-
-            players = []
-            for p_row in player_rows:
-                players.append({
-                    'id': p_row[0],
-                    'player_name': p_row[1]
-                })
-
+            players = [
+                {'id': p[0], 'player_name': p[1]}
+                for p in player_rows
+            ]
             results.append({
                 'team_id': team_id,
                 'team_name': team_name,
@@ -608,10 +610,13 @@ class DBManager:
         conn.close()
         return results
 
-    # ----------------------
-    # GAME STATE TRACKING
-    # ----------------------
+    # ----------------------------------------------------------------
+    #                      GAME STATE TRACKING
+    # ----------------------------------------------------------------
     def init_session_state(self, session_id, team_ids):
+        """
+        Inserts rows into session_state for each team with score=0.
+        """
         conn = self.create_connection()
         cursor = conn.cursor()
         for t_id in team_ids:
@@ -623,6 +628,12 @@ class DBManager:
         conn.close()
 
     def get_session_state(self, session_id):
+        """
+        Returns {
+          'current_turn_team_id': X,
+          'scores': { team_id: score, ... }
+        }
+        """
         conn = self.create_connection()
         cursor = conn.cursor()
 
@@ -642,47 +653,39 @@ class DBManager:
         """, (session_id,))
         rows = cursor.fetchall()
 
-        scores = {}
-        for r in rows:
-            scores[r[0]] = r[1]
-
+        scores = {r[0]: r[1] for r in rows}
         conn.close()
+
         return {
             'current_turn_team_id': current_turn_team_id,
             'scores': scores
         }
 
     def update_score(self, session_id, team_id, new_score):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             UPDATE session_state
             SET score = ?
             WHERE session_id = ? AND team_id = ?;
-        """, (new_score, session_id, team_id))
-        conn.commit()
-        conn.close()
+        """
+        self._exec_commit(sql, (new_score, session_id, team_id))
 
     def update_current_turn(self, session_id, next_team_id):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             UPDATE sessions
             SET current_turn_team_id = ?
             WHERE id = ?;
-        """, (next_team_id, session_id))
-        conn.commit()
-        conn.close()
+        """
+        self._exec_commit(sql, (next_team_id, session_id))
 
     def mark_question_answered(self, session_id, question_id, was_correct):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        """
+        Records that 'question_id' was answered (was_correct=1/0) in 'session_questions'.
+        """
+        sql = """
             INSERT INTO session_questions (session_id, question_id, was_correct)
             VALUES (?, ?, ?);
-        """, (session_id, question_id, 1 if was_correct else 0))
-        conn.commit()
-        conn.close()
+        """
+        self._exec_commit(sql, (session_id, question_id, 1 if was_correct else 0))
 
     def any_questions_left_for_session(self, session_id, question_group_id):
         """
@@ -690,19 +693,20 @@ class DBManager:
         for the given question_group_id that hasn't been answered in 'session_questions'.
         Otherwise returns False.
         """
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
+        sql = """
             SELECT q.id
             FROM questions q
             WHERE q.question_group_id = ?
               AND q.id NOT IN (
-                  SELECT question_id 
+                  SELECT question_id
                   FROM session_questions
                   WHERE session_id = ?
               )
             LIMIT 1;
-        """, (question_group_id, session_id))
+        """
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, (question_group_id, session_id))
         row = cursor.fetchone()
         conn.close()
         return (row is not None)

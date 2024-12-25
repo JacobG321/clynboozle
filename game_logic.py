@@ -1,5 +1,3 @@
-# game_logic.py
-
 import re
 import random
 import string
