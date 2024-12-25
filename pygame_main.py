@@ -4,7 +4,6 @@ from db_manager import DBManager
 from game_logic import GameLogic
 import json
 
-
 # ---------------------------
 # PyGame Initialization
 # ---------------------------
