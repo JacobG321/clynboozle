@@ -459,9 +459,6 @@ def draw_session_setup(display_manager):
     # Title
     layout.draw_text_centered(0.08, "Session Setup", size_multiplier=1.5)
     
-    # Group selection
-    layout.draw_text_centered(0.18, "Select Group ID:", size_multiplier=0.8)
-    
     # Get groups from database
     conn = db.create_connection()
     cursor = conn.cursor()
@@ -470,13 +467,18 @@ def draw_session_setup(display_manager):
     conn.close()
     
     # Create grid of group buttons
-    group_buttons = layout.create_grid_buttons(
-        items=[f"{gid}: {gname}" for gid, gname in groups],
-        start_y_percent=0.25,
-        button_width_percent=0.3,
-        button_height_percent=0.08,
-        color=(0, 200, 200)
-    )
+    group_buttons = []
+    current_y = 0.2
+    for gid, gname in groups:
+        btn = layout.create_centered_button(
+            y_percent=current_y,
+            width_percent=0.7,
+            height_percent=0.08,
+            color=(0, 200, 200),
+            text=f"{gid}: {gname}"
+        )
+        group_buttons.append((btn, gid))  # Store only the ID
+        current_y += 0.1
     
     # Time input
     time_box = layout.create_input_field(
@@ -487,7 +489,7 @@ def draw_session_setup(display_manager):
         label="Time per Question (sec):"
     )
     
-    # Buttons
+    # Create session button
     create_session_btn = layout.create_centered_button(
         y_percent=0.75,
         width_percent=0.3,
@@ -591,25 +593,26 @@ def draw_gameplay(display_manager):
         )
         return end_btn, None, None, None
     
-    # Question handling with debug info
+    # Question handling
     if "active_question" not in question_data or question_data["active_question"] is None:
-        # Debug info
-        print(f"[DEBUG] Session ID: {game_logic.current_session_id}")
-        print(f"[DEBUG] Group ID: {s_data['question_group_id']}")
-        any_questions = db.any_questions_left_for_session(game_logic.current_session_id, s_data['question_group_id'])
-        print(f"[DEBUG] Any questions left: {any_questions}")
-        
-        q = game_logic.begin_game_loop()
-        print(f"[DEBUG] Got question: {q is not None}")
-        
-        question_data["active_question"] = q if q is not None else None
-        question_data["user_answer"] = ""
+        print(f"[DEBUG] Loading new question for session {game_logic.current_session_id}")
+        # Check if any questions are available
+        available = db.any_questions_left_for_session(game_logic.current_session_id, s_data['question_group_id'])
+        if not available:
+            print("[DEBUG] No questions available")
+            question_data["active_question"] = None
+        else:
+            print("[DEBUG] Getting next question")
+            q = game_logic.begin_game_loop()
+            question_data["active_question"] = q
+            question_data["user_answer"] = ""
+            print(f"[DEBUG] Loaded question: {q['question'] if q else 'None'}")
     
-    aq = question_data["active_question"]
+    aq = question_data.get("active_question")
     if aq is None:
-        print("[DEBUG] No active question, showing final scores")
-        end_btn = draw_final_scores(display_manager)
-        return end_btn, None, None, None
+        if not db.any_questions_left_for_session(game_logic.current_session_id, s_data['question_group_id']):
+            end_btn = draw_final_scores(display_manager)
+            return end_btn, None, None, None
     
     # Display question
     qtype = aq["question_type"]
@@ -1049,10 +1052,8 @@ def handle_add_questions_toggle_correct(field_name):
         opt["is_correct"] = i == idx
 
 
-# ---------------------------
-# NEW EVENT HANDLERS
-# ---------------------------
 def handle_session_setup(event, buttons):
+    """Handle session setup events."""
     global current_state, session_setup_data, focused_field
     back_btn, group_buttons, time_box, create_session_btn = buttons
 
@@ -1062,7 +1063,8 @@ def handle_session_setup(event, buttons):
 
     for btn, gid in group_buttons:
         if btn.collidepoint(event.pos):
-            session_setup_data["question_group_id"] = gid
+            # Store only the numeric ID
+            session_setup_data["question_group_id"] = int(gid)
             print(f"[UI] Chose group {gid}")
 
     if time_box.collidepoint(event.pos):
@@ -1078,9 +1080,9 @@ def handle_session_setup(event, buttons):
         except ValueError:
             print("[UI] Invalid time-per-question input.")
             return
-        sid = game_logic.create_new_session(
-            session_setup_data["question_group_id"], tpq
-        )
+            
+        # Create session using the game_logic instance which has a db instance
+        sid = game_logic.create_new_session(tpq, int(session_setup_data["question_group_id"]))
         print(f"[UI] Created session {sid}")
         global team_list
         team_list = []
@@ -1101,7 +1103,7 @@ def handle_session_setup_keydown(event):
 
 
 def handle_team_setup(event, buttons):
-    global current_state, team_input_text, team_list, focused_field
+    global current_state, team_input_text, team_list, focused_field, question_data
     back_btn, team_box, add_team_btn, done_btn = buttons
 
     if back_btn.collidepoint(event.pos):
@@ -1121,7 +1123,17 @@ def handle_team_setup(event, buttons):
         return
 
     if done_btn.collidepoint(event.pos):
+        if not team_list:
+            print("[UI] Must add at least one team!")
+            return
+            
+        # Set up teams
         game_logic.setup_teams(team_list)
+        
+        # Initialize question state
+        question_data.clear()  # Clear any old state
+        question_data["active_question"] = None
+        
         print("[UI] Teams set up! Moving to gameplay.")
         current_state = GAMEPLAY
 

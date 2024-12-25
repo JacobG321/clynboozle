@@ -145,13 +145,15 @@ class DBManager:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
                 question_id INTEGER NOT NULL,
-                was_correct INTEGER DEFAULT 0,
+                was_correct INTEGER,
+                answered INTEGER DEFAULT 0,
                 answered_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(session_id) REFERENCES sessions(id),
-                FOREIGN KEY(question_id) REFERENCES questions(id)
+                FOREIGN KEY(question_id) REFERENCES questions(id),
+                UNIQUE(session_id, question_id)
             );
         """)
-
+        
         conn.commit()
         conn.close()
 
@@ -384,51 +386,36 @@ class DBManager:
         conn.commit()
         conn.close()
 
-    def get_random_question(self, question_group_id=None, session_id=None):
+    def get_random_question(self, question_group_id, session_id):
         """
-        Retrieves a random question from the specified group that has NOT
-        been answered in 'session_questions' for the given session_id.
-        If session_id is None, we just pick randomly from the group with no filter.
-        Returns a dict or None if no questions are found.
+        Retrieves a random unanswered question from the specified group.
         """
-
         conn = self.create_connection()
         cursor = conn.cursor()
 
-        # We'll build a base query
-        base_query = """
+        query = """
             SELECT 
-                q.id, 
-                q.question_group_id, 
-                q.question, 
-                q.fill_in_blank_text, 
-                q.points, 
-                q.category, 
+                q.id,
+                q.question_group_id,
+                q.question,
+                q.fill_in_blank_text,
+                q.points,
+                q.category,
                 q.question_type
             FROM questions q
+            LEFT JOIN session_questions sq ON q.id = sq.question_id AND sq.session_id = ?
+            WHERE q.question_group_id = ?
+            AND (sq.was_correct IS NULL OR NOT EXISTS (
+                SELECT 1 FROM session_questions
+                WHERE question_id = q.id AND session_id = ?
+            ))
+            ORDER BY RANDOM()
+            LIMIT 1;
         """
-        where_clauses = []
-        params = []
-
-        # If question_group_id is specified
-        if question_group_id is not None:
-            where_clauses.append("q.question_group_id = ?")
-            params.append(question_group_id)
-
-        # If session_id is provided, exclude questions already answered
-        if session_id is not None:
-            where_clauses.append("q.id NOT IN (SELECT question_id FROM session_questions WHERE session_id = ?) ")
-            params.append(session_id)
-
-        if where_clauses:
-            base_query += " WHERE " + " AND ".join(where_clauses)
-
-        # Finally order by random and limit 1
-        base_query += " ORDER BY RANDOM() LIMIT 1;"
-
-        cursor.execute(base_query, tuple(params))
+        
+        cursor.execute(query, (session_id, question_group_id, session_id))
         row = cursor.fetchone()
-
+        
         if not row:
             conn.close()
             return None
@@ -444,13 +431,14 @@ class DBManager:
             'options': []
         }
 
-        # If multiple_choice, fetch the options
+        # If multiple choice, get the options
         if question_dict['question_type'] == 'multiple_choice':
             cursor.execute("""
                 SELECT id, option_text, is_correct
                 FROM question_options
                 WHERE question_id = ?;
             """, (question_dict['id'],))
+            
             option_rows = cursor.fetchall()
             for opt_row in option_rows:
                 question_dict['options'].append({
@@ -678,33 +666,64 @@ class DBManager:
         self._exec_commit(sql, (next_team_id, session_id))
 
     def mark_question_answered(self, session_id, question_id, was_correct):
-        """
-        Records that 'question_id' was answered (was_correct=1/0) in 'session_questions'.
-        """
+        """Records that a question was answered in the session."""
         sql = """
-            INSERT INTO session_questions (session_id, question_id, was_correct)
-            VALUES (?, ?, ?);
+            INSERT INTO session_questions 
+                (session_id, question_id, was_correct, answered)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(session_id, question_id) 
+            DO UPDATE SET 
+                was_correct = ?,
+                answered = 1,
+                answered_at = CURRENT_TIMESTAMP;
         """
-        self._exec_commit(sql, (session_id, question_id, 1 if was_correct else 0))
+        self._exec_commit(sql, (session_id, question_id, was_correct, was_correct))
 
     def any_questions_left_for_session(self, session_id, question_group_id):
         """
-        Returns True if there's at least one question in 'questions'
-        for the given question_group_id that hasn't been marked as answered
-        in 'session_questions'. Otherwise returns False.
+        Returns True if there are any unanswered questions remaining.
         """
         sql = """
             SELECT q.id
             FROM questions q
-            LEFT JOIN session_questions sq ON q.id = sq.question_id 
-                AND sq.session_id = ?
             WHERE q.question_group_id = ?
-                AND (sq.answered = 0 OR sq.answered IS NULL)
+            AND NOT EXISTS (
+                SELECT 1
+                FROM session_questions sq
+                WHERE sq.question_id = q.id
+                AND sq.session_id = ?
+                AND sq.was_correct IS NOT NULL
+            )
             LIMIT 1;
         """
         conn = self.create_connection()
         cursor = conn.cursor()
-        cursor.execute(sql, (session_id, question_group_id))
+        cursor.execute(sql, (question_group_id, session_id))
         row = cursor.fetchone()
         conn.close()
-        return (row is not None)
+        return row is not None
+
+    def create_new_session(self, time_per_question, question_group_id):
+        """Creates a new session and initializes session questions."""
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        
+        # Create the session
+        cursor.execute("""
+            INSERT INTO sessions (time_per_question, question_group_id, is_active)
+            VALUES (?, ?, 1);
+        """, (time_per_question, question_group_id))
+        
+        session_id = cursor.lastrowid
+        
+        # Initialize questions for this session
+        cursor.execute("""
+            INSERT INTO session_questions (session_id, question_id, was_correct, answered)
+            SELECT ?, id, NULL, 0
+            FROM questions
+            WHERE question_group_id = ?;
+        """, (session_id, question_group_id))
+        
+        conn.commit()
+        conn.close()
+        return session_id

@@ -23,7 +23,7 @@ class GameLogic:
         self.teams = []
         self.scores = {}
 
-    def create_new_session(self, question_group_id, time_per_question):
+    def create_new_session(self, time_per_question, question_group_id):
         """
         Creates a brand-new session in the DB, storing question_group_id and time_per_question,
         ensuring we do not accidentally reuse or conflict with an old session.
@@ -32,30 +32,9 @@ class GameLogic:
         if self.current_session_id is not None:
             self.end_session()
 
-        # Create the new session
-        self.current_session_id = self.db.create_session(time_per_question, question_group_id)
+        # Create new session and initialize questions
+        self.current_session_id = self.db.create_new_session(time_per_question, question_group_id)
         self.current_session_info = self.db.get_session(self.current_session_id)
-
-        # Initialize the question pool for this session
-        conn = self.db.create_connection()
-        cursor = conn.cursor()
-        
-        # Get all questions for this group
-        cursor.execute("""
-            SELECT id FROM questions 
-            WHERE question_group_id = ?
-        """, (question_group_id,))
-        questions = cursor.fetchall()
-        
-        # Initialize each question as unanswered for this session
-        for (q_id,) in questions:
-            cursor.execute("""
-                INSERT INTO session_questions (session_id, question_id, answered)
-                VALUES (?, ?, 0)
-            """, (self.current_session_id, q_id))
-        
-        conn.commit()
-        conn.close()
 
         # Clear local team references
         self.teams = []
@@ -107,21 +86,31 @@ class GameLogic:
         Get a random question if any remain. Return the question dict or None if no questions left.
         """
         if not self.current_session_id:
+            print("[DEBUG] No current session ID")
             return None
+            
         s_data = self.db.get_session(self.current_session_id)
         if not s_data or not s_data["is_active"]:
+            print("[DEBUG] Session not found or not active")
             return None
 
         question_group_id = s_data["question_group_id"]
         if not question_group_id:
+            print("[DEBUG] No question group ID found")
             return None
 
-        # Check if any questions remain
-        if not self.db.any_questions_left_for_session(self.current_session_id, question_group_id):
+        print(f"[DEBUG] Checking for questions in group {question_group_id}")
+        any_left = self.db.any_questions_left_for_session(self.current_session_id, question_group_id)
+        print(f"[DEBUG] Questions remaining: {any_left}")
+
+        if not any_left:
+            print("[DEBUG] No questions remain")
             return None
 
-        # Fetch a random question that hasn't been answered in this session
-        return self.db.get_random_question(question_group_id, self.current_session_id)
+        # Fetch a random question
+        question = self.db.get_random_question(question_group_id, self.current_session_id)
+        print(f"[DEBUG] Got random question: {question}")
+        return question
 
 
     def mark_answer(self, question_id, was_correct, points=0):
