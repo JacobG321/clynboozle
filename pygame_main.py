@@ -1,7 +1,7 @@
 import pygame
 import re
 from db_manager import DBManager
-from game_logic import GameLogic  # <--- Our new game logic module
+from game_logic import GameLogic
 
 # ---------------------------
 # PyGame Initialization
@@ -36,12 +36,10 @@ VIEW_GROUP = "VIEW_GROUP"
 SELECT_QUESTION_TYPE = "SELECT_QUESTION_TYPE"
 ADD_QUESTIONS = "ADD_QUESTIONS"
 
-# NEW STATES for the game flow
 SESSION_SETUP = "SESSION_SETUP"
 TEAM_SETUP = "TEAM_SETUP"
 GAMEPLAY = "GAMEPLAY"
 FEEDBACK = "FEEDBACK"
-
 
 current_state = MAIN_MENU
 
@@ -58,9 +56,9 @@ focused_field = None
 selected_question_group_id = None
 selected_question_type = None
 question_data = {}   # Holds question info (including editing vs. new)
-input_text = ""      # Temporary input text for add_group screen
+input_text = ""      # For add_group screen
 
-# For the game flow
+# For the game flow (session setup, etc.)
 session_setup_data = {
     "question_group_id": None,
     "time_per_question": "30",
@@ -72,6 +70,10 @@ team_input_text = "" # used to type new team name
 # Helper Functions
 # ---------------------------
 def create_button(x, y, width, height, color, text, text_color=WHITE):
+    """
+    Draw a rectangular button with center-aligned text.
+    Returns the button's rect for collision checking.
+    """
     button_rect = pygame.Rect(x, y, width, height)
     pygame.draw.rect(screen, color, button_rect)
     button_text = font.render(text, True, text_color)
@@ -85,38 +87,104 @@ def create_button(x, y, width, height, color, text, text_color=WHITE):
     return button_rect
 
 def draw_back_button():
+    """
+    A common "Back" button in the bottom-left corner.
+    """
     return create_button(50, 500, 100, 50, BLUE, "Back")
+
+def draw_text_centered(y, text, color=BLACK, fnt=font):
+    """
+    Draw the given text horizontally centered at the given y.
+    """
+    surf = fnt.render(text, True, color)
+    x = (SCREEN_WIDTH - surf.get_width()) // 2
+    screen.blit(surf, (x, y))
+
+def get_team_name(team_id):
+    """
+    A small helper that returns the team name from game_logic.teams
+    or a fallback if not found.
+    """
+    for t in game_logic.teams:
+        if t["team_id"] == team_id:
+            return t["team_name"]
+    return f"Team {team_id}"
+
+# ----------------------------------------------------------
+# Final Score & Winner Display (extract from draw_gameplay)
+# ----------------------------------------------------------
+def draw_final_scores():
+    """
+    Called when there are no more questions left in draw_gameplay().
+    Displays final scoreboard and winner(s).
+    Returns a rect for "End Session" button, or None if you prefer.
+    """
+    screen.fill(WHITE)
+    draw_text_centered(50, "No more questions left!", RED)
+
+    final_scores = game_logic.get_scores()  # {team_id: score}
+    team_list_local = game_logic.teams
+
+    # Highest score logic
+    if final_scores:
+        max_score = max(final_scores.values())
+        winner_ids = [tid for tid, sc in final_scores.items() if sc == max_score]
+    else:
+        max_score = 0
+        winner_ids = []
+
+    y_offset = 120
+    scores_label = font.render("Final Scores:", True, BLACK)
+    screen.blit(scores_label, (50, y_offset))
+    y_offset += 50
+
+    for tid, sc in final_scores.items():
+        team_name = get_team_name(tid)
+        line_surf = small_font.render(f"{team_name}: {sc}", True, BLACK)
+        screen.blit(line_surf, (70, y_offset))
+        y_offset += 30
+
+    y_offset += 30
+    # Compute winner(s)
+    winner_names = [get_team_name(w_id) for w_id in winner_ids]
+
+    if len(winner_names) == 1:
+        winner_msg = f"{winner_names[0]} is the WINNER!"
+    elif len(winner_names) > 1:
+        # tie
+        winner_msg = f"{', '.join(winner_names)} are the WINNERS!"
+    else:
+        winner_msg = "No winners?"  # (shouldn't happen if there's at least 1 team)
+
+    winner_surf = font.render(winner_msg, True, GREEN)
+    screen.blit(winner_surf, (50, y_offset))
+    y_offset += 60
+
+    end_btn = create_button(300, 500, 200, 50, RED, "End Session")
+    return end_btn
 
 # ---------------------------
 # Draw Screens
 # ---------------------------
 def draw_main_menu():
     screen.fill(WHITE)
-    title = font.render("Clynboozle", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Clynboozle")
     start_game_btn = create_button(300, 200, 225, 50, BLUE, "Start Game")
     manage_groups_btn = create_button(300, 300, 225, 50, BLUE, "Manage Groups")
     quit_btn = create_button(300, 400, 225, 50, BLUE, "Quit")
-
     return start_game_btn, manage_groups_btn, quit_btn
 
 def draw_manage_groups():
     screen.fill(WHITE)
-    title = font.render("Manage Groups", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Manage Groups")
     back_btn = draw_back_button()
     add_group_btn = create_button(300, 200, 200, 50, BLUE, "Add Group")
     select_group_btn = create_button(300, 300, 200, 50, BLUE, "View Groups")
-
     return back_btn, add_group_btn, select_group_btn
 
 def draw_add_group(input_text):
     screen.fill(WHITE)
-    title = font.render("Add New Group", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Add New Group")
     back_btn = draw_back_button()
     input_box = pygame.Rect(200, 250, 400, 50)
     pygame.draw.rect(screen, GRAY, input_box)
@@ -124,14 +192,11 @@ def draw_add_group(input_text):
     screen.blit(input_text_render, (input_box.x + 10, input_box.y + 10))
 
     save_btn = create_button(300, 350, 200, 50, BLUE, "Save")
-
     return back_btn, input_box, save_btn
 
 def draw_select_group():
     screen.fill(WHITE)
-    title = font.render("Select a Group", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Select a Group")
     back_btn = draw_back_button()
 
     group_buttons = []
@@ -152,9 +217,7 @@ def draw_select_group():
 
 def draw_view_group(question_group_id):
     screen.fill(WHITE)
-    title = font.render(f"Group {question_group_id} Questions", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, f"Group {question_group_id} Questions")
     back_btn = draw_back_button()
     add_question_btn = create_button(300, 500, 200, 50, BLUE, "Add Question")
     delete_group_btn = create_button(600, 500, 200, 50, RED, "Delete Group")
@@ -173,21 +236,16 @@ def draw_view_group(question_group_id):
 
 def draw_select_question_type():
     screen.fill(WHITE)
-    title = font.render("Select Question Type", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Select Question Type")
     back_btn = draw_back_button()
     multiple_choice_btn = create_button(300, 200, 300, 50, BLUE, "Multiple Choice")
     fill_in_blank_btn = create_button(300, 300, 300, 50, BLUE, "Fill in the Blank")
     open_ended_btn = create_button(300, 400, 300, 50, BLUE, "Open Ended")
-
     return back_btn, multiple_choice_btn, fill_in_blank_btn, open_ended_btn
 
 def draw_add_questions():
     screen.fill(WHITE)
-    title = font.render("Add Question Details", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
-
+    draw_text_centered(50, "Add Question Details")
     back_btn = draw_back_button()
     y_offset = 120
     input_fields = []
@@ -274,8 +332,7 @@ def draw_add_questions():
 # ---------------------------
 def draw_session_setup():
     screen.fill(WHITE)
-    title = font.render("Session Setup", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
+    draw_text_centered(50, "Session Setup")
 
     # Show groups to pick from
     y_offset = 120
@@ -315,8 +372,7 @@ def draw_session_setup():
 
 def draw_team_setup():
     screen.fill(WHITE)
-    title = font.render("Team Setup", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 50))
+    draw_text_centered(50, "Team Setup")
 
     y_offset = 120
     t_label = small_font.render("Current Teams:", True, BLACK)
@@ -345,14 +401,17 @@ def draw_team_setup():
     return back_btn, team_box, add_team_btn, done_btn
 
 def draw_gameplay():
+    """
+    The main question screen. If no question left, we show final scores.
+    """
     screen.fill(WHITE)
 
-    # If no session or session is inactive
+    # If no active session
     if not game_logic.current_session_id:
         msg = font.render("No Active Session!", True, RED)
         screen.blit(msg, (50, 50))
         end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
-        return end_btn, None, None, None  # We'll return 4-tuple for convenience
+        return end_btn, None, None, None
 
     s_data = db.get_session(game_logic.current_session_id)
     if not s_data or not s_data["is_active"]:
@@ -361,96 +420,35 @@ def draw_gameplay():
         end_btn = create_button(300, 500, 200, 50, RED, "Back to Menu")
         return end_btn, None, None, None
 
-    # Make sure we have a question
+    # Ensure we have a question
     if "active_question" not in question_data or question_data["active_question"] is None:
-        q = game_logic.begin_game_loop()  # Attempt to fetch a new question
+        q = game_logic.begin_game_loop()
         if q is None:
             question_data["active_question"] = None
         else:
             question_data["active_question"] = q
             question_data["user_answer"] = ""
 
-    # If STILL None, we show "No more questions."
     aq = question_data["active_question"]
-    y_offset = 50
     if aq is None:
-        screen.fill(WHITE)
-        msg = font.render("No more questions left!", True, RED)
-        screen.blit(msg, (50, 50))
-
-        # Grab final scores
-        final_scores = game_logic.get_scores()  # dict of {team_id: score}
-
-        # We also want the team names from game_logic.teams
-        # e.g. game_logic.teams is [ { "team_id": 1, "team_name": "Alpha", ...}, ... ]
-        team_list = game_logic.teams
-
-        # Determine the highest score
-        max_score = max(final_scores.values()) if final_scores else 0
-        # Find all teams that have this highest score (in case of a tie)
-        winner_ids = [tid for tid, sc in final_scores.items() if sc == max_score]
-
-        y_offset = 120
-        # Show final scoreboard
-        scores_label = font.render("Final Scores:", True, BLACK)
-        screen.blit(scores_label, (50, y_offset))
-        y_offset += 50
-
-        for tid, sc in final_scores.items():
-            # find name
-            name_str = f"Team {tid}"
-            for t in team_list:
-                if t["team_id"] == tid:
-                    name_str = t["team_name"]
-                    break
-            line_surf = small_font.render(f"{name_str}: {sc}", True, BLACK)
-            screen.blit(line_surf, (70, y_offset))
-            y_offset += 30
-
-        y_offset += 30
-
-        # Now display the winner(s)
-        winner_names = []
-        for w_id in winner_ids:
-            # find the name
-            w_name = f"Team {w_id}"
-            for t in team_list:
-                if t["team_id"] == w_id:
-                    w_name = t["team_name"]
-                    break
-            winner_names.append(w_name)
-
-        if len(winner_names) == 1:
-            winner_msg = f"{winner_names[0]} is the WINNER!"
-        else:
-            # tie
-            winner_msg = f"{', '.join(winner_names)} are the WINNERS!"
-
-        winner_surf = font.render(winner_msg, True, GREEN)
-        screen.blit(winner_surf, (50, y_offset))
-        y_offset += 60
-
-        # Optionally a "Back to Menu" or "End Session" button
-        end_btn = create_button(300, 500, 200, 50, RED, "End Session")
-        # We can return it if needed by your code
+        # No more questions; display final scoreboard
+        end_btn = draw_final_scores()
         return end_btn, None, None, None
 
+    y_offset = 50
     qtype = aq["question_type"]
     q_text = aq["question"]
 
-    # If fill_in_blank, mask the text
+    # fill_in_blank -> mask text
     if qtype == "fill_in_blank" and aq.get("fill_in_blank_text"):
         pat = re.escape(aq["fill_in_blank_text"])
         q_text = re.sub(pat, "_____", q_text, flags=re.IGNORECASE)
 
-    # Display the question
     quest_surf = small_font.render(q_text, True, BLACK)
     screen.blit(quest_surf, (50, y_offset))
     y_offset += 40
 
     end_btn = create_button(50, 500, 200, 50, RED, "End Session")
-    # We'll keep track of some clickable elements in a list
-    # so we can handle them in handle_gameplay().
     clickable_buttons = []
 
     # MULTIPLE CHOICE
@@ -510,13 +508,8 @@ def draw_gameplay():
     return end_btn, None, clickable_buttons, None
 
 def draw_feedback():
-    """
-    Display "Correct!" or "Incorrect!" based on question_data["last_was_correct"].
-    Provide a button "Next Question" to proceed, or "End Session" if user wants.
-    """
     screen.fill(WHITE)
-    title = font.render("Result", True, BLACK)
-    screen.blit(title, (SCREEN_WIDTH//2 - title.get_width()//2, 50))
+    draw_text_centered(50, "Result")
 
     was_correct = question_data.get("last_was_correct", False)
     msg_text = "Incorrect!"
@@ -532,10 +525,7 @@ def draw_feedback():
 
     next_btn = create_button(300, 300, 200, 50, BLUE, "Next Question")
     end_btn = create_button(300, 400, 200, 50, RED, "End Session")
-
     return next_btn, end_btn
-
-
 
 # ---------------------------
 # Event Handlers
@@ -982,8 +972,6 @@ def handle_feedback(event, buttons):
         question_data.clear()
         current_state = MAIN_MENU
         return
-
-
 
 
 # ---------------------------
