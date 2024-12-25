@@ -30,12 +30,34 @@ class GameLogic:
         """
         # If there was an old session still active, end it
         if self.current_session_id is not None:
-            self.end_session()  # or self.db.update_session_status(self.current_session_id, False)
+            self.end_session()
 
+        # Create the new session
         self.current_session_id = self.db.create_session(time_per_question, question_group_id)
         self.current_session_info = self.db.get_session(self.current_session_id)
 
-        # Also clear local team references, etc. so this is truly new
+        # Initialize the question pool for this session
+        conn = self.db.create_connection()
+        cursor = conn.cursor()
+        
+        # Get all questions for this group
+        cursor.execute("""
+            SELECT id FROM questions 
+            WHERE question_group_id = ?
+        """, (question_group_id,))
+        questions = cursor.fetchall()
+        
+        # Initialize each question as unanswered for this session
+        for (q_id,) in questions:
+            cursor.execute("""
+                INSERT INTO session_questions (session_id, question_id, answered)
+                VALUES (?, ?, 0)
+            """, (self.current_session_id, q_id))
+        
+        conn.commit()
+        conn.close()
+
+        # Clear local team references
         self.teams = []
         self.scores = {}
 

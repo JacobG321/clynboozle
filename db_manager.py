@@ -690,23 +690,21 @@ class DBManager:
     def any_questions_left_for_session(self, session_id, question_group_id):
         """
         Returns True if there's at least one question in 'questions'
-        for the given question_group_id that hasn't been answered in 'session_questions'.
-        Otherwise returns False.
+        for the given question_group_id that hasn't been marked as answered
+        in 'session_questions'. Otherwise returns False.
         """
         sql = """
             SELECT q.id
             FROM questions q
+            LEFT JOIN session_questions sq ON q.id = sq.question_id 
+                AND sq.session_id = ?
             WHERE q.question_group_id = ?
-              AND q.id NOT IN (
-                  SELECT question_id
-                  FROM session_questions
-                  WHERE session_id = ?
-              )
+                AND (sq.answered = 0 OR sq.answered IS NULL)
             LIMIT 1;
         """
         conn = self.create_connection()
         cursor = conn.cursor()
-        cursor.execute(sql, (question_group_id, session_id))
+        cursor.execute(sql, (session_id, question_group_id))
         row = cursor.fetchone()
         conn.close()
         return (row is not None)
