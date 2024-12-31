@@ -1,6 +1,4 @@
 import sqlite3
-import datetime
-import random
 
 DB_NAME = "clynboozle.db"
 

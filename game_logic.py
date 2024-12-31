@@ -1,6 +1,3 @@
-import re
-import random
-import string
 from db_manager import DBManager
 
 class GameLogic:

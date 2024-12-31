@@ -9,8 +9,8 @@ class DisplayManager:
         self.native_height = display_info.current_h
         
         # Base design resolution (what you're currently using)
-        self.base_width = 800  # Your current width
-        self.base_height = 600 # Your current height
+        self.base_width = 800
+        self.base_height = 600
         
         # Set initial scale factors
         self.scale_x = 1.0

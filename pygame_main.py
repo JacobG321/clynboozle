@@ -10,12 +10,6 @@ pygame.init()
 # Initialize Display Manager
 display_manager = DisplayManager()
 
-# We'll now create a function to get scaled fonts instead of global font objects
-def get_font(size):
-    """Get a properly scaled font of the specified base size."""
-    return display_manager.get_scaled_font(size)
-
-
 # ---------------------------
 # Game States
 # ---------------------------
@@ -75,16 +69,14 @@ def get_team_name(team_id):
 # ---------------------------
 # Draw Screens
 # ---------------------------
-def draw_main_menu(display_manager):
+def draw_main_menu(layout):
     """Draw the main menu screen with responsive elements."""
-    # Initialize responsive layout
-    layout = ResponsiveLayout(display_manager)
     
     # Clear screen
-    display_manager.screen.fill((255, 255, 255))  # white background
+    layout.display_manager.screen.fill('white')  # white background
     
     # Draw title
-    layout.draw_text_centered(0.1, "Clynboozle", size_multiplier=1.5)
+    layout.draw_text_centered(0.08, "Clynboozle", size_multiplier=1.5)
     
     # Create main menu buttons
     start_game_btn = layout.create_centered_button(
@@ -113,10 +105,9 @@ def draw_main_menu(display_manager):
     
     return start_game_btn, manage_groups_btn, quit_btn
 
-def draw_manage_groups(display_manager):
+def draw_manage_groups(layout):
     """Draw the manage groups screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Manage Groups", size_multiplier=1.5)
@@ -150,10 +141,9 @@ def draw_manage_groups(display_manager):
     return back_btn, add_group_btn, select_group_btn
 
 
-def draw_select_group(display_manager):
+def draw_select_group(layout):
     """Draw the group selection screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Select a Group", size_multiplier=1.5)
@@ -188,10 +178,9 @@ def draw_select_group(display_manager):
     
     return back_btn, group_buttons
 
-def draw_add_group(display_manager, input_text):
+def draw_add_group(layout, input_text):
     """Draw the add group screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Headers
     layout.draw_text_centered(0.08, "Add New Group", size_multiplier=1.5)
@@ -233,10 +222,9 @@ def draw_add_group(display_manager, input_text):
     
     return back_btn, input_box, save_btn
 
-def draw_view_group(display_manager, question_group_id):
+def draw_view_group(layout, question_group_id):
     """Draw the question group view screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, f"Group {question_group_id} Questions", size_multiplier=1.5)
@@ -300,10 +288,9 @@ def draw_view_group(display_manager, question_group_id):
     
     return back_btn, add_question_btn, delete_group_btn, question_buttons
 
-def draw_select_question_type(display_manager):
+def draw_select_question_type(layout):
     """Draw the question type selection screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Select Question Type", size_multiplier=1.5)
@@ -338,10 +325,9 @@ def draw_select_question_type(display_manager):
     return (back_btn, *buttons)
 
 
-def draw_add_questions(display_manager):
+def draw_add_questions(layout):
     """Draw the question addition screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Add Question Details", size_multiplier=1.5)
@@ -451,10 +437,9 @@ def draw_add_questions(display_manager):
 # ---------------------------
 # GAME LOGIC
 # ---------------------------
-def draw_session_setup(display_manager):
+def draw_session_setup(layout):
     """Draw the game session setup screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Session Setup", size_multiplier=1.5)
@@ -509,10 +494,9 @@ def draw_session_setup(display_manager):
     
     return back_btn, group_buttons, time_box, create_session_btn
 
-def draw_team_setup(display_manager):
+def draw_team_setup(layout):
     """Draw the team setup screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Team Setup", size_multiplier=1.5)
@@ -564,10 +548,9 @@ def draw_team_setup(display_manager):
     
     return back_btn, team_box, add_team_btn, done_btn
 
-def draw_gameplay(display_manager):
+def draw_gameplay(layout):
     """Draw the main gameplay screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Check for active session
     if not game_logic.current_session_id:
@@ -611,7 +594,7 @@ def draw_gameplay(display_manager):
     aq = question_data.get("active_question")
     if aq is None:
         if not db.any_questions_left_for_session(game_logic.current_session_id, s_data['question_group_id']):
-            end_btn = draw_final_scores(display_manager)
+            end_btn = draw_final_scores(layout)
             return end_btn, None, None, None
     
     # Display question
@@ -711,10 +694,9 @@ def draw_gameplay(display_manager):
     
     return end_btn, None, clickable_buttons, None
 
-def draw_final_scores(display_manager):
+def draw_final_scores(layout):
     """Draw the final scores screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "No more questions left!", size_multiplier=1.2, color=(255, 0, 0))
@@ -759,10 +741,9 @@ def draw_final_scores(display_manager):
     
     return end_btn
 
-def draw_feedback(display_manager):
+def draw_feedback(layout):
     """Draw the feedback screen with responsive elements."""
-    layout = ResponsiveLayout(display_manager)
-    display_manager.screen.fill('white')
+    layout.display_manager.screen.fill('white')
     
     # Title
     layout.draw_text_centered(0.08, "Result", size_multiplier=1.5)
@@ -1284,37 +1265,42 @@ def main():
     running = True
     buttons = None
 
+    # Create a single layout instance
+    layout = ResponsiveLayout(display_manager)
+
     while running:
-        # Draw
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_pressed = pygame.mouse.get_pressed()[0]  # Left mouse button
+        layout.update_mouse_state(mouse_pos, mouse_pressed)
+
         if current_state == MAIN_MENU:
-            buttons = draw_main_menu(display_manager)
+            buttons = draw_main_menu(layout)
         elif current_state == MANAGE_GROUPS:
-            buttons = draw_manage_groups(display_manager)
+            buttons = draw_manage_groups(layout)
         elif current_state == ADD_GROUP:
-            buttons = draw_add_group(display_manager, input_text)
+            buttons = draw_add_group(layout, input_text)
         elif current_state == SELECT_GROUP:
-            buttons = draw_select_group(display_manager)
+            buttons = draw_select_group(layout)
         elif current_state == VIEW_GROUP:
-            buttons = draw_view_group(display_manager, selected_question_group_id)
+            buttons = draw_view_group(layout, selected_question_group_id)
         elif current_state == SELECT_QUESTION_TYPE:
-            buttons = draw_select_question_type(display_manager)
+            buttons = draw_select_question_type(layout)
         elif current_state == ADD_QUESTIONS:
-            buttons = draw_add_questions(display_manager)
+            buttons = draw_add_questions(layout)
         elif current_state == SESSION_SETUP:
-            buttons = draw_session_setup(display_manager)
+            buttons = draw_session_setup(layout)
         elif current_state == TEAM_SETUP:
-            buttons = draw_team_setup(display_manager)
+            buttons = draw_team_setup(layout)
         elif current_state == GAMEPLAY:
-            buttons = draw_gameplay(display_manager)
+            buttons = draw_gameplay(layout)
         elif current_state == FEEDBACK:
-            buttons = draw_feedback(display_manager)
+            buttons = draw_feedback(layout)
         for event in pygame.event.get():
             if event.type == pygame.VIDEORESIZE:
-                display_manager.update_display_size(event.w, event.h)
+                layout.update_display_size(event.w, event.h)
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.MOUSEBUTTONDOWN:
-                design_x, design_y = display_manager.unscale_pos(*event.pos)
                 if current_state == MAIN_MENU:
                     handle_main_menu(event, buttons)
                 elif current_state == MANAGE_GROUPS:
@@ -1360,7 +1346,7 @@ def main():
                     handle_gameplay_keydown(event)
 
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(60)
 
     pygame.quit()
 
