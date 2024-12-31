@@ -1264,15 +1264,70 @@ def main():
     clock = pygame.time.Clock()
     running = True
     buttons = None
-
+    
     # Create a single layout instance
     layout = ResponsiveLayout(display_manager)
 
     while running:
+        # Process all events first
+        for event in pygame.event.get():
+            if event.type == pygame.VIDEORESIZE:
+                display_manager.update_display_size(event.w, event.h)
+                layout.update_scale_factors()
+            elif event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if current_state == MAIN_MENU:
+                    handle_main_menu(event, buttons)
+                elif current_state == MANAGE_GROUPS:
+                    handle_manage_groups(event, buttons)
+                elif current_state == ADD_GROUP:
+                    handle_add_group(event, buttons)
+                elif current_state == SELECT_GROUP:
+                    handle_select_group(event, buttons)
+                elif current_state == VIEW_GROUP:
+                    handle_view_group(event, buttons)
+                elif current_state == SELECT_QUESTION_TYPE:
+                    handle_select_question_type(event, buttons)
+                elif current_state == ADD_QUESTIONS:
+                    handle_add_questions_click(event, buttons)
+                    _, input_fields, _, _ = buttons
+                    for field_name, rect in input_fields:
+                        if rect.collidepoint(event.pos) and field_name.startswith("toggle_correct_"):
+                            handle_add_questions_toggle_correct(field_name)
+                            break
+                elif current_state == SESSION_SETUP:
+                    handle_session_setup(event, buttons)
+                elif current_state == TEAM_SETUP:
+                    handle_team_setup(event, buttons)
+                elif current_state == GAMEPLAY:
+                    handle_gameplay(event, buttons)
+                elif current_state == FEEDBACK:
+                    handle_feedback(event, buttons)
+            elif event.type == pygame.KEYDOWN:
+                if current_state == ADD_GROUP:
+                    if event.key == pygame.K_BACKSPACE:
+                        input_text = input_text[:-1]
+                    else:
+                        input_text += event.unicode
+                elif current_state == ADD_QUESTIONS:
+                    handle_add_questions_keydown(event)
+                elif current_state == SESSION_SETUP:
+                    handle_session_setup_keydown(event)
+                elif current_state == TEAM_SETUP:
+                    handle_team_setup_keydown(event)
+                elif current_state == GAMEPLAY:
+                    handle_gameplay_keydown(event)
+
+        # Update mouse state after processing events
         mouse_pos = pygame.mouse.get_pos()
         mouse_pressed = pygame.mouse.get_pressed()[0]  # Left mouse button
         layout.update_mouse_state(mouse_pos, mouse_pressed)
 
+        # Clear the screen before drawing
+        layout.display_manager.screen.fill((255, 255, 255))  # white background
+
+        # Draw current state
         if current_state == MAIN_MENU:
             buttons = draw_main_menu(layout)
         elif current_state == MANAGE_GROUPS:
@@ -1295,58 +1350,15 @@ def main():
             buttons = draw_gameplay(layout)
         elif current_state == FEEDBACK:
             buttons = draw_feedback(layout)
-        for event in pygame.event.get():
-            if event.type == pygame.VIDEORESIZE:
-                layout.update_display_size(event.w, event.h)
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if current_state == MAIN_MENU:
-                    handle_main_menu(event, buttons)
-                elif current_state == MANAGE_GROUPS:
-                    handle_manage_groups(event, buttons)
-                elif current_state == ADD_GROUP:
-                    handle_add_group(event, buttons)
-                elif current_state == SELECT_GROUP:
-                    handle_select_group(event, buttons)
-                elif current_state == VIEW_GROUP:
-                    handle_view_group(event, buttons)
-                elif current_state == SELECT_QUESTION_TYPE:
-                    handle_select_question_type(event, buttons)
-                elif current_state == ADD_QUESTIONS:
-                    handle_add_questions_click(event, buttons)
-                    _, input_fields, _, _ = buttons
-                    for field_name, rect in input_fields:
-                        if rect.collidepoint(event.pos) and field_name.startswith(
-                            "toggle_correct_"
-                        ):
-                            handle_add_questions_toggle_correct(field_name)
-                            break
-                elif current_state == SESSION_SETUP:
-                    handle_session_setup(event, buttons)
-                elif current_state == TEAM_SETUP:
-                    handle_team_setup(event, buttons)
-                elif current_state == GAMEPLAY:
-                    handle_gameplay(event, buttons)
-                elif current_state == FEEDBACK:
-                    handle_feedback(event, buttons)
-            if event.type == pygame.KEYDOWN:
-                if current_state == ADD_GROUP:
-                    if event.key == pygame.K_BACKSPACE:
-                        input_text = input_text[:-1]
-                    else:
-                        input_text += event.unicode
-                elif current_state == ADD_QUESTIONS:
-                    handle_add_questions_keydown(event)
-                elif current_state == SESSION_SETUP:
-                    handle_session_setup_keydown(event)
-                elif current_state == TEAM_SETUP:
-                    handle_team_setup_keydown(event)
-                elif current_state == GAMEPLAY:
-                    handle_gameplay_keydown(event)
+
+        # Debug info (optional, remove in production)
+        font = pygame.font.Font(None, 24)
+        debug_text = f"Mouse: {mouse_pos}, Pressed: {mouse_pressed}"
+        debug_surf = font.render(debug_text, True, (0, 0, 0))
+        layout.display_manager.screen.blit(debug_surf, (10, 10))
 
         pygame.display.flip()
-        clock.tick(60)
+        clock.tick(60)  # 60 FPS for smooth animations
 
     pygame.quit()
 

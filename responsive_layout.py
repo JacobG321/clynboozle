@@ -24,19 +24,21 @@ class ResponsiveLayout:
     
     def update_mouse_state(self, pos, pressed):
         """Update current mouse position and state"""
-        # Scale the mouse position to match our coordinate system
-        scaled_x, scaled_y = self.display_manager.unscale_pos(pos[0], pos[1])
-        self.mouse_pos = (scaled_x, scaled_y)
+        # Store the actual screen position without scaling
+        self.mouse_pos = pos  # Use raw screen coordinates
         self.mouse_pressed = pressed
         
-        # Store previous frame's press state to detect transitions
+        # Store previous frame's press state
         if not hasattr(self, 'prev_pressed'):
             self.prev_pressed = False
-            
-        # Detect press and release events
+        
         self.just_pressed = pressed and not self.prev_pressed
         self.just_released = not pressed and self.prev_pressed
         self.prev_pressed = pressed
+
+    def check_hover(self, rect: pygame.Rect) -> bool:
+        """Check if mouse is hovering over a rect"""
+        return rect.collidepoint(self.mouse_pos)
     
     def adjust_color(self, color: Tuple[int, int, int], amount: int) -> Tuple[int, int, int]:
         """Lighten or darken a color by the given amount"""
@@ -45,79 +47,66 @@ class ResponsiveLayout:
     def draw_button(self, rect: pygame.Rect, color: Tuple[int, int, int], 
                     text: str, text_color: Tuple[int, int, int],
                     pressed: bool = False, hovered: bool = False):
-        """Draw a button with enhanced hover and press effects"""
+        """Draw a button with enhanced visual feedback"""
+        # Constants for visual effects
         SHADOW_OFFSET = 4
-        PRESS_OFFSET = 3
+        PRESS_OFFSET = 4
         
-        # Original position for reference
-        original_y = rect.y
+        # Draw order: shadow -> button -> highlight -> text
         
-        # Shadow effect (only when not pressed)
+        # Base shadow (when not pressed)
         if not pressed:
             shadow_rect = rect.copy()
             shadow_rect.y += SHADOW_OFFSET
-            pygame.draw.rect(self.display_manager.screen, (0, 0, 0, 128), 
+            pygame.draw.rect(self.display_manager.screen, (0, 0, 0, 100), 
                             shadow_rect, border_radius=8)
         
         # Button background
         button_rect = rect.copy()
         if pressed:
-            button_rect.y += PRESS_OFFSET  # Move down when pressed
-            button_color = self.adjust_color(color, -40)  # Darker when pressed
-            # Add a darker inner shadow when pressed
-            inner_shadow = button_rect.copy()
-            inner_shadow.y -= 1
-            pygame.draw.rect(self.display_manager.screen, 
-                            self.adjust_color(color, -60),
-                            inner_shadow, border_radius=8)
+            # Move button down and darken when pressed
+            button_rect.y += PRESS_OFFSET
+            button_color = self.adjust_color(color, -50)
         elif hovered:
-            button_color = self.adjust_color(color, 30)  # Lighter when hovered
-            # Add a subtle glow effect when hovered
-            glow_rect = button_rect.copy()
-            glow_rect.inflate_ip(4, 4)
-            pygame.draw.rect(self.display_manager.screen, 
-                            self.adjust_color(color, 50),
-                            glow_rect, border_radius=10)
+            # Lighten when hovered
+            button_color = self.adjust_color(color, 40)
         else:
             button_color = color
         
-        # Draw the main button
-        pygame.draw.rect(self.display_manager.screen, button_color, 
-                        button_rect, border_radius=8)
+        # Main button body
+        pygame.draw.rect(self.display_manager.screen, button_color, button_rect, border_radius=8)
         
-        # Add a subtle top highlight for 3D effect
-        highlight_rect = button_rect.copy()
-        highlight_rect.height = 2
-        pygame.draw.rect(self.display_manager.screen,
-                        self.adjust_color(button_color, 30),
-                        highlight_rect, border_radius=8)
-        
-        # Text with shadow
-        font = self.get_font()
-        if pressed:
-            text_color = self.adjust_color(text_color, -30)
-        text_surface = font.render(text, True, text_color)
-        text_rect = text_surface.get_rect(center=button_rect.center)
-        
-        # Draw text shadow when not pressed
+        # Top highlight for 3D effect
         if not pressed:
-            shadow_text_rect = text_rect.copy()
-            shadow_text_rect.y += 1
-            shadow_surface = font.render(text, True, (0, 0, 0, 128))
-            self.display_manager.screen.blit(shadow_surface, shadow_text_rect)
+            highlight_rect = button_rect.copy()
+            highlight_rect.height = 2
+            pygame.draw.rect(self.display_manager.screen,
+                            self.adjust_color(button_color, 50),
+                            highlight_rect, border_radius=8)
         
-        # Draw main text
+        # Text
+        font = self.get_font()
+        # Darken text slightly when pressed
+        final_text_color = self.adjust_color(text_color, -30) if pressed else text_color
+        text_surface = font.render(text, True, final_text_color)
+        
+        # Center text in button, adjust for pressed state
+        text_rect = text_surface.get_rect()
+        text_rect.center = button_rect.center
+        if pressed:
+            text_rect.y += PRESS_OFFSET
+        
         self.display_manager.screen.blit(text_surface, text_rect)
         
         return button_rect
     
     def create_centered_button(self, 
-                             y_percent: float, 
-                             width_percent: float, 
-                             height_percent: float, 
-                             color: Tuple[int, int, int], 
-                             text: str, 
-                             text_color: Tuple[int, int, int] = (255, 255, 255)) -> pygame.Rect:
+                            y_percent: float, 
+                            width_percent: float, 
+                            height_percent: float, 
+                            color: Tuple[int, int, int], 
+                            text: str, 
+                            text_color: Tuple[int, int, int] = (255, 255, 255)) -> pygame.Rect:
         """Create a button centered horizontally at given vertical position"""
         width = int(self.screen_width * width_percent)
         height = int(self.screen_height * height_percent)
@@ -126,8 +115,8 @@ class ResponsiveLayout:
         
         button_rect = pygame.Rect(x, y, width, height)
         
-        # Check if mouse is over button
-        hovered = button_rect.collidepoint(self.mouse_pos)
+        # Check if mouse is over button using screen coordinates
+        hovered = self.check_hover(button_rect)
         pressed = hovered and self.mouse_pressed
         
         return self.draw_button(button_rect, color, text, text_color, pressed, hovered)
