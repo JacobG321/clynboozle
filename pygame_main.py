@@ -87,7 +87,7 @@ def draw_main_menu(layout):
         text="Start Game"
     )
     
-    manage_groups_btn = layout.create_centered_button(
+    manage_question_groups_btn = layout.create_centered_button(
         y_percent=0.45,
         width_percent=0.4,
         height_percent=0.1,
@@ -103,9 +103,9 @@ def draw_main_menu(layout):
         text="Quit"
     )
     
-    return start_game_btn, manage_groups_btn, quit_btn
+    return start_game_btn, manage_question_groups_btn, quit_btn
 
-def draw_manage_groups(layout):
+def draw_manage_question_groups(layout):
     """Draw the manage groups screen with responsive elements."""
     layout.display_manager.screen.fill('white')
     
@@ -122,7 +122,7 @@ def draw_manage_groups(layout):
         text="Back"
     )
     
-    add_group_btn = layout.create_centered_button(
+    add_question_group_btn = layout.create_centered_button(
         y_percent=0.3,
         width_percent=0.3,
         height_percent=0.1,
@@ -130,7 +130,7 @@ def draw_manage_groups(layout):
         text="Add Group"
     )
     
-    select_group_btn = layout.create_centered_button(
+    select_question_group_btn = layout.create_centered_button(
         y_percent=0.45,
         width_percent=0.3,
         height_percent=0.1,
@@ -138,10 +138,10 @@ def draw_manage_groups(layout):
         text="View Groups"
     )
     
-    return back_btn, add_group_btn, select_group_btn
+    return back_btn, add_question_group_btn, select_question_group_btn
 
 
-def draw_select_group(layout):
+def draw_select_question_group(layout):
     """Draw the group selection screen with responsive elements."""
     layout.display_manager.screen.fill('white')
     
@@ -161,12 +161,12 @@ def draw_select_group(layout):
     conn = db.create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, group_name FROM groups")
-    groups = cursor.fetchall()
+    question_groups = cursor.fetchall()
     conn.close()
     
     # Create grid of group buttons
     buttons = layout.create_grid_buttons(
-        items=[f"{g[0]}: {g[1]}" for g in groups],
+        items=[f"{g[0]}: {g[1]}" for g in question_groups],
         start_y_percent=0.2,
         button_width_percent=0.4,
         button_height_percent=0.08,
@@ -174,11 +174,11 @@ def draw_select_group(layout):
     )
     
     # Convert buttons to expected format
-    group_buttons = [(btn, gid) for (btn, _), (gid, _) in zip(buttons, groups)]
+    question_group_buttons = [(btn, gid) for (btn, _), (gid, _) in zip(buttons, question_groups)]
     
-    return back_btn, group_buttons
+    return back_btn, question_group_buttons
 
-def draw_add_group(layout, input_text):
+def draw_add_question_group(layout, input_text):
     """Draw the add group screen with responsive elements."""
     layout.display_manager.screen.fill('white')
     
@@ -222,7 +222,7 @@ def draw_add_group(layout, input_text):
     
     return back_btn, input_box, save_btn
 
-def draw_view_group(layout, question_group_id):
+def draw_view_question_group(layout, question_group_id):
     """Draw the question group view screen with responsive elements."""
     layout.display_manager.screen.fill('white')
     
@@ -248,7 +248,7 @@ def draw_view_group(layout, question_group_id):
         text="Add Question"
     )
     
-    delete_group_btn = layout.create_positioned_button(
+    delete_question_group_btn = layout.create_positioned_button(
         x_percent=0.75,
         y_percent=0.85,
         width_percent=0.2,
@@ -258,7 +258,7 @@ def draw_view_group(layout, question_group_id):
     )
     
     # Question list
-    questions = db.get_questions_for_group(question_group_id)
+    questions = db.get_questions_for_question_group(question_group_id)
     question_buttons = []
     current_y = 0.2  # Start at 20% of screen height
     
@@ -286,7 +286,7 @@ def draw_view_group(layout, question_group_id):
         question_buttons.append((q_btn, del_btn, q['id']))
         current_y += 0.1  # Move down 10% of screen height
     
-    return back_btn, add_question_btn, delete_group_btn, question_buttons
+    return back_btn, add_question_btn, delete_question_group_btn, question_buttons
 
 def draw_select_question_type(layout):
     """Draw the question type selection screen with responsive elements."""
@@ -444,17 +444,17 @@ def draw_session_setup(layout):
     # Title
     layout.draw_text_centered(0.08, "Session Setup", size_multiplier=1.5)
     
-    # Get groups from database
+    # Get question groups from database
     conn = db.create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, group_name FROM groups ORDER BY id ASC;")
-    groups = cursor.fetchall()
+    question_groups = cursor.fetchall()
     conn.close()
     
     # Create grid of group buttons
-    group_buttons = []
+    question_group_buttons = []
     current_y = 0.2
-    for gid, gname in groups:
+    for gid, gname in question_groups:
         btn = layout.create_centered_button(
             y_percent=current_y,
             width_percent=0.7,
@@ -462,7 +462,7 @@ def draw_session_setup(layout):
             color=(0, 200, 200),
             text=f"{gid}: {gname}"
         )
-        group_buttons.append((btn, gid))  # Store only the ID
+        question_group_buttons.append((btn, gid))  # Store only the ID
         current_y += 0.1
     
     # Time input
@@ -492,7 +492,7 @@ def draw_session_setup(layout):
         text="Back"
     )
     
-    return back_btn, group_buttons, time_box, create_session_btn
+    return back_btn, question_group_buttons, time_box, create_session_btn
 
 def draw_team_setup(layout):
     """Draw the team setup screen with responsive elements."""
@@ -784,59 +784,59 @@ def draw_feedback(layout):
 # ---------------------------
 def handle_main_menu(event, buttons):
     global current_state
-    start_game_btn, manage_groups_btn, quit_btn = buttons
+    start_game_btn, manage_question_groups_btn, quit_btn = buttons
     if start_game_btn.collidepoint(event.pos):
         current_state = SESSION_SETUP
-    elif manage_groups_btn.collidepoint(event.pos):
+    elif manage_question_groups_btn.collidepoint(event.pos):
         current_state = MANAGE_GROUPS
     elif quit_btn.collidepoint(event.pos):
         pygame.quit()
         exit()
 
 
-def handle_manage_groups(event, buttons):
+def handle_manage_question_groups(event, buttons):
     global current_state
-    back_btn, add_group_btn, select_group_btn = buttons
+    back_btn, add_question_group_btn, select_question_group_btn = buttons
     if back_btn.collidepoint(event.pos):
         current_state = MAIN_MENU
-    elif add_group_btn.collidepoint(event.pos):
+    elif add_question_group_btn.collidepoint(event.pos):
         current_state = ADD_GROUP
-    elif select_group_btn.collidepoint(event.pos):
+    elif select_question_group_btn.collidepoint(event.pos):
         current_state = SELECT_GROUP
 
 
-def handle_add_group(event, buttons):
+def handle_add_question_group(event, buttons):
     global current_state, input_text
     back_btn, input_box, save_btn = buttons
     if back_btn.collidepoint(event.pos):
         current_state = MANAGE_GROUPS
     elif save_btn.collidepoint(event.pos) and input_text:
-        db.insert_group(input_text)
+        db.insert_question_group(input_text)
         input_text = ""
         current_state = MANAGE_GROUPS
 
 
-def handle_select_group(event, buttons):
+def handle_select_question_group(event, buttons):
     global current_state, selected_question_group_id
-    back_btn, group_buttons = buttons
+    back_btn, question_group_buttons = buttons
     if back_btn.collidepoint(event.pos):
         current_state = MANAGE_GROUPS
     else:
-        for group_btn, g_id in group_buttons:
+        for group_btn, g_id in question_group_buttons:
             if group_btn.collidepoint(event.pos):
                 selected_question_group_id = g_id
                 current_state = VIEW_GROUP
 
 
-def handle_view_group(event, buttons):
+def handle_view_question_group(event, buttons):
     global current_state, question_data
-    back_btn, add_question_btn, delete_group_btn, question_buttons = buttons
+    back_btn, add_question_btn, delete_question_group_btn, question_buttons = buttons
     if back_btn.collidepoint(event.pos):
         current_state = SELECT_GROUP
     elif add_question_btn.collidepoint(event.pos):
         current_state = SELECT_QUESTION_TYPE
-    elif delete_group_btn.collidepoint(event.pos):
-        db.delete_group(selected_question_group_id)
+    elif delete_question_group_btn.collidepoint(event.pos):
+        db.delete_question_group(selected_question_group_id)
         current_state = SELECT_GROUP
     else:
         for q_btn, del_btn, q_id in question_buttons:
@@ -1036,17 +1036,17 @@ def handle_add_questions_toggle_correct(field_name):
 def handle_session_setup(event, buttons):
     """Handle session setup events."""
     global current_state, session_setup_data, focused_field
-    back_btn, group_buttons, time_box, create_session_btn = buttons
+    back_btn, question_group_buttons, time_box, create_session_btn = buttons
 
     if back_btn.collidepoint(event.pos):
         current_state = MAIN_MENU
         return
 
-    for btn, gid in group_buttons:
+    for btn, gid in question_group_buttons:
         if btn.collidepoint(event.pos):
             # Store only the numeric ID
             session_setup_data["question_group_id"] = int(gid)
-            print(f"[UI] Chose group {gid}")
+            print(f"[UI] Chose question group {gid}")
 
     if time_box.collidepoint(event.pos):
         focused_field = "time_per_question"
@@ -1054,7 +1054,7 @@ def handle_session_setup(event, buttons):
 
     if create_session_btn.collidepoint(event.pos):
         if not session_setup_data["question_group_id"]:
-            print("[UI] No group selected!")
+            print("[UI] No question group selected!")
             return
         try:
             tpq = int(session_setup_data["time_per_question"])
@@ -1280,13 +1280,13 @@ def main():
                 if current_state == MAIN_MENU:
                     handle_main_menu(event, buttons)
                 elif current_state == MANAGE_GROUPS:
-                    handle_manage_groups(event, buttons)
+                    handle_manage_question_groups(event, buttons)
                 elif current_state == ADD_GROUP:
-                    handle_add_group(event, buttons)
+                    handle_add_question_group(event, buttons)
                 elif current_state == SELECT_GROUP:
-                    handle_select_group(event, buttons)
+                    handle_select_question_group(event, buttons)
                 elif current_state == VIEW_GROUP:
-                    handle_view_group(event, buttons)
+                    handle_view_question_group(event, buttons)
                 elif current_state == SELECT_QUESTION_TYPE:
                     handle_select_question_type(event, buttons)
                 elif current_state == ADD_QUESTIONS:
@@ -1325,19 +1325,19 @@ def main():
         layout.update_mouse_state(mouse_pos, mouse_pressed)
 
         # Clear the screen before drawing
-        layout.display_manager.screen.fill((255, 255, 255))  # white background
+        layout.display_manager.screen.fill('white')  # white background
 
         # Draw current state
         if current_state == MAIN_MENU:
             buttons = draw_main_menu(layout)
         elif current_state == MANAGE_GROUPS:
-            buttons = draw_manage_groups(layout)
+            buttons = draw_manage_question_groups(layout)
         elif current_state == ADD_GROUP:
-            buttons = draw_add_group(layout, input_text)
+            buttons = draw_add_question_group(layout, input_text)
         elif current_state == SELECT_GROUP:
-            buttons = draw_select_group(layout)
+            buttons = draw_select_question_group(layout)
         elif current_state == VIEW_GROUP:
-            buttons = draw_view_group(layout, selected_question_group_id)
+            buttons = draw_view_question_group(layout, selected_question_group_id)
         elif current_state == SELECT_QUESTION_TYPE:
             buttons = draw_select_question_type(layout)
         elif current_state == ADD_QUESTIONS:

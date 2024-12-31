@@ -159,7 +159,7 @@ class DBManager:
     #                          GROUPS + QUESTIONS
     # ----------------------------------------------------------------
 
-    def insert_group(self, group_name):
+    def insert_question_group(self, group_name):
         """
         Inserts a new row into 'groups' and returns the new group's ID.
         """
@@ -346,7 +346,7 @@ class DBManager:
         conn.close()
         return question_dict
 
-    def get_questions_for_group(self, question_group_id):
+    def get_questions_for_question_group(self, question_group_id):
         """
         Fetches all questions for a particular group (basic info).
         """
@@ -448,12 +448,12 @@ class DBManager:
         conn.close()
         return question_dict
 
-    def delete_group(self, question_group_id):
+    def delete_question_group(self, question_group_id):
         """
         Deletes a group and all associated questions (and their options).
         """
         # 1. Find all questions for this group
-        questions = self.get_questions_for_group(question_group_id)
+        questions = self.get_questions_for_question_group(question_group_id)
 
         conn = self.create_connection()
         cursor = conn.cursor()
