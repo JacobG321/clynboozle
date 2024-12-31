@@ -1,4 +1,4 @@
-from db_manager import DBManager
+from utils.db_manager import DBManager
 
 class GameLogic:
     """

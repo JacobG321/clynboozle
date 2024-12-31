@@ -1,7 +1,7 @@
 import pygame
 import re
-from db_manager import DBManager
-from game_logic import GameLogic
+from utils.db_manager import DBManager
+from utils.game_logic import GameLogic
 from display_manager import DisplayManager
 from responsive_layout import ResponsiveLayout
 
